@@ -61,6 +61,11 @@ class AppDrawerFragment : Fragment() {
         initViews()
         initSearch()
         initAdapter()
+
+        arguments?.getString(Constants.Key.SEARCH_QUERY)?.let {
+            if (it.isNotEmpty()) binding.search.setQuery(it, false)
+        }
+
         initObservers()
         initClickListeners()
     }

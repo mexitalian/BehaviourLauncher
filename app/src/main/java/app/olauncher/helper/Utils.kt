@@ -344,6 +344,15 @@ fun openSearch(context: Context) {
     context.startActivity(intent)
 }
 
+fun openVoiceSearch(context: Context) {
+    try {
+        val intent = Intent(android.speech.RecognizerIntent.ACTION_WEB_SEARCH)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        context.showToast(context.getString(R.string.app_not_found))
+    }
+}
+
 @SuppressLint("WrongConstant", "PrivateApi")
 fun expandNotificationDrawer(context: Context) {
     // Source: https://stackoverflow.com/a/51132142

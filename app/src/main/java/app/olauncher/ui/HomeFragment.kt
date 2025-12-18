@@ -18,6 +18,9 @@ import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
+import androidx.activity.result.contract.ActivityResultContracts
+import android.speech.RecognizerIntent
+import android.app.Activity
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
@@ -40,6 +43,7 @@ import app.olauncher.helper.openCalendar
 import app.olauncher.helper.openCameraApp
 import app.olauncher.helper.openDialerApp
 import app.olauncher.helper.openSearch
+import app.olauncher.helper.openVoiceSearch
 import app.olauncher.helper.setPlainWallpaperByTheme
 import app.olauncher.helper.showToast
 import app.olauncher.listener.OnSwipeTouchListener
@@ -53,6 +57,18 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
     private lateinit var prefs: Prefs
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
+
+    private val voiceSearchLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText: ArrayList<String>? =
+                result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            spokenText?.let {
+                if (it.isNotEmpty()) {
+                    showAppList(Constants.FLAG_LAUNCH_APP, false, false, it[0])
+                }
+            }
+        }
+    }
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
@@ -92,6 +108,9 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
             R.id.date -> openCalendarApp()
             R.id.setDefaultLauncher -> viewModel.resetLauncherLiveData.call()
             R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
+            R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
+            R.id.ivVoiceSearch -> startVoiceRecognition()
+
 
             else -> {
                 try { // Launch app
@@ -220,6 +239,7 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         binding.setDefaultLauncher.setOnClickListener(this)
         binding.setDefaultLauncher.setOnLongClickListener(this)
         binding.tvScreenTime.setOnClickListener(this)
+        binding.ivVoiceSearch?.setOnClickListener(this)
     }
 
     private fun setHomeAlignment(horizontalGravity: Int = prefs.homeAlignment) {
@@ -391,14 +411,25 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         )
     }
 
-    private fun showAppList(flag: Int, rename: Boolean = false, includeHiddenApps: Boolean = false) {
+    private fun startVoiceRecognition() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        try {
+            voiceSearchLauncher.launch(intent)
+        } catch (e: Exception) {
+            requireContext().showToast(getString(R.string.app_not_found))
+        }
+    }
+
+    private fun showAppList(flag: Int, rename: Boolean = false, includeHiddenApps: Boolean = false, searchQuery: String = "") {
         viewModel.getAppList(includeHiddenApps)
         try {
             findNavController().navigate(
                 R.id.action_mainFragment_to_appListFragment,
                 bundleOf(
                     Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename
+                    Constants.Key.RENAME to rename,
+                    Constants.Key.SEARCH_QUERY to searchQuery
                 )
             )
         } catch (e: Exception) {
@@ -406,7 +437,8 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
                 R.id.appListFragment,
                 bundleOf(
                     Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename
+                    Constants.Key.RENAME to rename,
+                    Constants.Key.SEARCH_QUERY to searchQuery
                 )
             )
             e.printStackTrace()

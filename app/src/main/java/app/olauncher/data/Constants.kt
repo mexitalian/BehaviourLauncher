@@ -5,6 +5,7 @@ object Constants {
     object Key {
         const val FLAG = "flag"
         const val RENAME = "rename"
+        const val SEARCH_QUERY = "search_query"
     }
 
     object Dialog {
