@@ -16,6 +16,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,7 +55,8 @@ import java.util.Locale
 
 class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener {
 
-    private lateinit var prefs: Prefs
+    @VisibleForTesting
+    lateinit var prefs: Prefs
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -80,7 +82,9 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        prefs = Prefs(requireContext())
+        if (!::prefs.isInitialized) {
+            prefs = Prefs(requireContext())
+        }
         viewModel = activity?.run {
             ViewModelProvider(this)[MainViewModel::class.java]
         } ?: throw Exception("Invalid Activity")
@@ -445,7 +449,7 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         }
     }
 
-    private fun swipeDownAction() {
+    fun onSwipeDown() {
         when (prefs.swipeDownAction) {
             Constants.SwipeDownAction.SEARCH -> openSearch(requireContext())
             else -> expandNotificationDrawer(requireContext())
@@ -550,6 +554,10 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
     private fun textOnLongClick(view: View) = onLongClick(view)
 
+    fun onSwipeUp() {
+        showAppList(Constants.FLAG_LAUNCH_APP)
+    }
+
     private fun getSwipeGestureListener(context: Context): View.OnTouchListener {
         return object : OnSwipeTouchListener(context) {
             override fun onSwipeLeft() {
@@ -564,12 +572,12 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
             override fun onSwipeUp() {
                 super.onSwipeUp()
-                showAppList(Constants.FLAG_LAUNCH_APP)
+                this@HomeFragment.onSwipeUp()
             }
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                swipeDownAction()
+                this@HomeFragment.onSwipeDown()
             }
 
             override fun onLongClick() {
@@ -611,12 +619,12 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
             override fun onSwipeUp() {
                 super.onSwipeUp()
-                showAppList(Constants.FLAG_LAUNCH_APP)
+                this@HomeFragment.onSwipeUp()
             }
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                swipeDownAction()
+                this@HomeFragment.onSwipeDown()
             }
 
             override fun onLongClick(view: View) {

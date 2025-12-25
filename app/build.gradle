@@ -67,4 +67,9 @@ dependencies {
     testImplementation libs.junit
     testImplementation libs.cucumber.java
     testImplementation libs.cucumber.junit
+    testImplementation libs.mockito.core
+    testImplementation libs.robolectric
+    testImplementation libs.fragment.testing
+    testImplementation libs.test.core.ktx
+    testImplementation libs.test.junit.ktx
 }
