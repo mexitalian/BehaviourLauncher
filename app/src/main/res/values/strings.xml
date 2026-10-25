@@ -173,4 +173,6 @@
     <string name="invalid_shortcut">Invalid shortcut</string>
     <string name="shortcut_not_found">Shortcut not found</string>
     <string name="unable_to_open_shortcut">Unable to open shortcut</string>
+    <string name="folder_add_apps_hint">No apps in this folder yet</string>
+    <string name="folder_app_missing">App not installed</string>
 </resources>
