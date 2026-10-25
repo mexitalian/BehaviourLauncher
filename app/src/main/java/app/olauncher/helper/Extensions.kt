@@ -14,7 +14,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.UserHandle
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.view.View
+import android.view.Window
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.annotation.RequiresApi
@@ -22,6 +25,23 @@ import app.olauncher.BuildConfig
 import app.olauncher.R
 import app.olauncher.data.Constants
 import java.util.Calendar
+import java.util.Locale
+
+fun Window.showStatusBar() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        insetsController?.show(WindowInsets.Type.statusBars())
+    else
+        @Suppress("DEPRECATION", "InlinedApi")
+        decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+}
+
+fun Window.hideStatusBar() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        insetsController?.hide(WindowInsets.Type.statusBars())
+    else
+        @Suppress("DEPRECATION")
+        decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE or View.SYSTEM_UI_FLAG_FULLSCREEN
+}
 
 fun View.hideKeyboard() {
     this.clearFocus()
@@ -87,29 +107,54 @@ fun Context.openSearch(query: String? = null) {
     startActivity(intent)
 }
 
+private var isEinkDevice: Boolean? = null
+
 fun Context.isEinkDisplay(): Boolean {
+    isEinkDevice?.let { return it }
+    return (hasEinkRefreshRate() || isOnyxDevice() || isKnownEinkModel())
+        .also { isEinkDevice = it }
+}
+
+private fun Context.hasEinkRefreshRate(): Boolean {
     return try {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        windowManager.defaultDisplay.refreshRate <= Constants.MIN_ANIM_REFRESH_RATE
+        // Check max supported refresh rate, not the current one, because adaptive
+        // refresh rate displays can drop to 30Hz or lower without being e-ink
+        windowManager.defaultDisplay.supportedModes.maxOf { it.refreshRate } <= Constants.MIN_ANIM_REFRESH_RATE
     } catch (e: Exception) {
         e.printStackTrace()
         false
     }
 }
 
-fun Context.searchOnPlayStore(query: String? = null): Boolean {
+// Boox devices report 60Hz+ refresh rates, so the refresh rate check misses them
+private fun isOnyxDevice(): Boolean {
+    if (Build.MANUFACTURER.equals("ONYX", ignoreCase = true)) return true
     return try {
-        startActivity(
-            Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/search?q=$query&c=apps")
-            ).addFlags(
-                Intent.FLAG_ACTIVITY_NO_HISTORY or
-                        Intent.FLAG_ACTIVITY_NEW_DOCUMENT or
-                        Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-            )
-        )
+        // Onyx firmware ships its e-ink SDK classes in the boot classpath
+        Class.forName("android.onyx.ViewUpdateHelper")
         true
+    } catch (ignored: Throwable) {
+        false
+    }
+}
+
+private fun isKnownEinkModel(): Boolean {
+    val brand = Build.BRAND.lowercase()
+    val manufacturer = Build.MANUFACTURER.lowercase()
+    val einkOnlyBrands = listOf("onyx", "boox", "dasung", "bigme", "boyue", "meebook", "mudita")
+    if (einkOnlyBrands.any { brand.contains(it) || manufacturer.contains(it) }) return true
+    // Hisense also sells LCD phones, so match only their e-ink line
+    if (brand.contains("hisense") || manufacturer.contains("hisense"))
+        return Regex("\\bA[579]\\b|TOUCH|HI READER").containsMatchIn(Build.MODEL.uppercase())
+    return false
+}
+
+fun Context.isSystemAnimationsDisabled(): Boolean {
+    return try {
+        Settings.Global.getFloat(contentResolver, Settings.Global.WINDOW_ANIMATION_SCALE, 1f) == 0f
+                || Settings.Global.getFloat(contentResolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f) == 0f
+                || Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     } catch (e: Exception) {
         e.printStackTrace()
         false
@@ -120,6 +165,15 @@ fun Context.isPackageInstalled(packageName: String, userHandle: UserHandle = and
     val launcher = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
     val activityInfo = launcher.getActivityList(packageName, userHandle)
     return activityInfo.isNotEmpty()
+}
+
+fun Context.isCountryIn(): Boolean {
+    val country = runCatching {
+        val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        telephonyManager?.simCountryIso?.takeIf { it.isNotBlank() }
+            ?: telephonyManager?.networkCountryIso?.takeIf { it.isNotBlank() }
+    }.getOrNull() ?: Locale.getDefault().country
+    return country.equals("IN", ignoreCase = true)
 }
 
 @RequiresApi(Build.VERSION_CODES.Q)

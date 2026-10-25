@@ -35,13 +35,15 @@ class Prefs(context: Context) {
     private val RATE_CLICKED = "RATE_CLICKED"
     private val WALLPAPER_MSG_SHOWN = "WALLPAPER_MSG_SHOWN"
     private val SHARE_SHOWN_TIME = "SHARE_SHOWN_TIME"
-    private val SWIPE_DOWN_ACTION = "SWIPE_DOWN_ACTION"
     private val TEXT_SIZE_SCALE = "TEXT_SIZE_SCALE"
+    private val BOLD_FONT = "BOLD_FONT"
     private val PRO_MESSAGE_SHOWN = "PRO_MESSAGE_SHOWN"
     private val HIDE_SET_DEFAULT_LAUNCHER = "HIDE_SET_DEFAULT_LAUNCHER"
     private val SCREEN_TIME_LAST_UPDATED = "SCREEN_TIME_LAST_UPDATED"
     private val LAUNCHER_RESTART_TIMESTAMP = "LAUNCHER_RECREATE_TIMESTAMP"
     private val SHOWN_ON_DAY_OF_YEAR = "SHOWN_ON_DAY_OF_YEAR"
+    // Home button for recents feature disabled
+    // private val HOME_BUTTON_SHOW_RECENTS = "HOME_BUTTON_SHOW_RECENTS"
 
     private val APP_NAME_1 = "APP_NAME_1"
     private val APP_NAME_2 = "APP_NAME_2"
@@ -90,6 +92,31 @@ class Prefs(context: Context) {
     private val CALENDAR_APP_PACKAGE = "CALENDAR_APP_PACKAGE"
     private val CALENDAR_APP_USER = "CALENDAR_APP_USER"
     private val CALENDAR_APP_CLASS_NAME = "CALENDAR_APP_CLASS_NAME"
+    private val SCREEN_TIME_APP_PACKAGE = "SCREEN_TIME_APP_PACKAGE"
+    private val SCREEN_TIME_APP_USER = "SCREEN_TIME_APP_USER"
+    private val SCREEN_TIME_APP_CLASS_NAME = "SCREEN_TIME_APP_CLASS_NAME"
+
+    private val IS_SHORTCUT_1 = "IS_SHORTCUT_1"
+    private val SHORTCUT_ID_1 = "SHORTCUT_ID_1"
+    private val IS_SHORTCUT_2 = "IS_SHORTCUT_2"
+    private val SHORTCUT_ID_2 = "SHORTCUT_ID_2"
+    private val IS_SHORTCUT_3 = "IS_SHORTCUT_3"
+    private val SHORTCUT_ID_3 = "SHORTCUT_ID_3"
+    private val IS_SHORTCUT_4 = "IS_SHORTCUT_4"
+    private val SHORTCUT_ID_4 = "SHORTCUT_ID_4"
+    private val IS_SHORTCUT_5 = "IS_SHORTCUT_5"
+    private val SHORTCUT_ID_5 = "SHORTCUT_ID_5"
+    private val IS_SHORTCUT_6 = "IS_SHORTCUT_6"
+    private val SHORTCUT_ID_6 = "SHORTCUT_ID_6"
+    private val IS_SHORTCUT_7 = "IS_SHORTCUT_7"
+    private val SHORTCUT_ID_7 = "SHORTCUT_ID_7"
+    private val IS_SHORTCUT_8 = "IS_SHORTCUT_8"
+    private val SHORTCUT_ID_8 = "SHORTCUT_ID_8"
+
+    private val SHORTCUT_ID_SWIPE_LEFT = "SHORTCUT_ID_SWIPE_LEFT"
+    private val IS_SHORTCUT_SWIPE_LEFT = "IS_SHORTCUT_SWIPE_LEFT"
+    private val SHORTCUT_ID_SWIPE_RIGHT = "SHORTCUT_ID_SWIPE_RIGHT"
+    private val IS_SHORTCUT_SWIPE_RIGHT = "IS_SHORTCUT_SWIPE_RIGHT"
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_FILENAME, 0)
 
@@ -173,6 +200,10 @@ class Prefs(context: Context) {
         get() = prefs.getFloat(TEXT_SIZE_SCALE, 1.0f)
         set(value) = prefs.edit { putFloat(TEXT_SIZE_SCALE, value).apply() }
 
+    var boldFont: Boolean
+        get() = prefs.getBoolean(BOLD_FONT, false)
+        set(value) = prefs.edit { putBoolean(BOLD_FONT, value).apply() }
+
     var proMessageShown: Boolean
         get() = prefs.getBoolean(PRO_MESSAGE_SHOWN, false)
         set(value) = prefs.edit { putBoolean(PRO_MESSAGE_SHOWN, value).apply() }
@@ -192,6 +223,11 @@ class Prefs(context: Context) {
     var shownOnDayOfYear: Int
         get() = prefs.getInt(SHOWN_ON_DAY_OF_YEAR, 0)
         set(value) = prefs.edit { putInt(SHOWN_ON_DAY_OF_YEAR, value).apply() }
+
+    // Home button for recents feature disabled
+    // var homeButtonShowRecents: Boolean
+    //     get() = prefs.getBoolean(HOME_BUTTON_SHOW_RECENTS, false)
+    //     set(value) = prefs.edit { putBoolean(HOME_BUTTON_SHOW_RECENTS, value).apply() }
 
     var hiddenApps: MutableSet<String>
         get() = prefs.getStringSet(HIDDEN_APPS, mutableSetOf()) as MutableSet<String>
@@ -220,10 +256,6 @@ class Prefs(context: Context) {
     var shareShownTime: Long
         get() = prefs.getLong(SHARE_SHOWN_TIME, 0L)
         set(value) = prefs.edit { putLong(SHARE_SHOWN_TIME, value).apply() }
-
-    var swipeDownAction: Int
-        get() = prefs.getInt(SWIPE_DOWN_ACTION, Constants.SwipeDownAction.NOTIFICATIONS)
-        set(value) = prefs.edit { putInt(SWIPE_DOWN_ACTION, value).apply() }
 
     var appName1: String
         get() = prefs.getString(APP_NAME_1, "").toString()
@@ -409,6 +441,98 @@ class Prefs(context: Context) {
         get() = prefs.getString(CALENDAR_APP_CLASS_NAME, "").toString()
         set(value) = prefs.edit { putString(CALENDAR_APP_CLASS_NAME, value).apply() }
 
+    var screenTimeAppPackage: String
+        get() = prefs.getString(SCREEN_TIME_APP_PACKAGE, "").toString()
+        set(value) = prefs.edit { putString(SCREEN_TIME_APP_PACKAGE, value).apply() }
+
+    var screenTimeAppUser: String
+        get() = prefs.getString(SCREEN_TIME_APP_USER, "").toString()
+        set(value) = prefs.edit { putString(SCREEN_TIME_APP_USER, value).apply() }
+
+    var screenTimeAppClassName: String?
+        get() = prefs.getString(SCREEN_TIME_APP_CLASS_NAME, "").toString()
+        set(value) = prefs.edit { putString(SCREEN_TIME_APP_CLASS_NAME, value).apply() }
+
+    var isShortcut1: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_1, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_1, value) }
+
+    var shortcutId1: String
+        get() = prefs.getString(SHORTCUT_ID_1, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_1, value) }
+
+    var isShortcut2: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_2, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_2, value) }
+
+    var shortcutId2: String
+        get() = prefs.getString(SHORTCUT_ID_2, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_2, value) }
+
+    var isShortcut3: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_3, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_3, value) }
+
+    var shortcutId3: String
+        get() = prefs.getString(SHORTCUT_ID_3, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_3, value) }
+
+    var isShortcut4: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_4, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_4, value) }
+
+    var shortcutId4: String
+        get() = prefs.getString(SHORTCUT_ID_4, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_4, value) }
+
+    var isShortcut5: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_5, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_5, value) }
+
+    var shortcutId5: String
+        get() = prefs.getString(SHORTCUT_ID_5, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_5, value) }
+
+    var isShortcut6: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_6, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_6, value) }
+
+    var shortcutId6: String
+        get() = prefs.getString(SHORTCUT_ID_6, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_6, value) }
+
+    var isShortcut7: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_7, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_7, value) }
+
+    var shortcutId7: String
+        get() = prefs.getString(SHORTCUT_ID_7, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_7, value) }
+
+    var isShortcut8: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_8, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_8, value) }
+
+    var shortcutId8: String
+        get() = prefs.getString(SHORTCUT_ID_8, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_8, value) }
+
+    var shortcutIdSwipeLeft: String
+        get() = prefs.getString(SHORTCUT_ID_SWIPE_LEFT, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_SWIPE_LEFT, value) }
+
+    var isShortcutSwipeLeft: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_SWIPE_LEFT, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_SWIPE_LEFT, value) }
+
+    var shortcutIdSwipeRight: String
+        get() = prefs.getString(SHORTCUT_ID_SWIPE_RIGHT, "").toString()
+        set(value) = prefs.edit { putString(SHORTCUT_ID_SWIPE_RIGHT, value) }
+
+    var isShortcutSwipeRight: Boolean
+        get() = prefs.getBoolean(IS_SHORTCUT_SWIPE_RIGHT, false)
+        set(value) = prefs.edit { putBoolean(IS_SHORTCUT_SWIPE_RIGHT, value) }
+
     fun getAppName(location: Int): String {
         return when (location) {
             1 -> prefs.getString(APP_NAME_1, "").toString()
@@ -465,7 +589,59 @@ class Prefs(context: Context) {
         }
     }
 
+    fun getShortcutId(location: Int): String {
+        return when (location) {
+            1 -> shortcutId1
+            2 -> shortcutId2
+            3 -> shortcutId3
+            4 -> shortcutId4
+            5 -> shortcutId5
+            6 -> shortcutId6
+            7 -> shortcutId7
+            8 -> shortcutId8
+            else -> ""
+        }
+    }
+
+    fun getIsShortcut(location: Int): Boolean {
+        return when (location) {
+            1 -> isShortcut1
+            2 -> isShortcut2
+            3 -> isShortcut3
+            4 -> isShortcut4
+            5 -> isShortcut5
+            6 -> isShortcut6
+            7 -> isShortcut7
+            8 -> isShortcut8
+            else -> false
+        }
+    }
+
+    fun setAppActivityClassName(location: Int, activityClassName: String) {
+        when (location) {
+            1 -> appActivityClassName1 = activityClassName
+            2 -> appActivityClassName2 = activityClassName
+            3 -> appActivityClassName3 = activityClassName
+            4 -> appActivityClassName4 = activityClassName
+            5 -> appActivityClassName5 = activityClassName
+            6 -> appActivityClassName6 = activityClassName
+            7 -> appActivityClassName7 = activityClassName
+            8 -> appActivityClassName8 = activityClassName
+        }
+    }
+
+    fun updateAppActivityClassName(packageName: String, activityClassName: String) {
+        for (i in 1..8) {
+            if (getAppPackage(i) == packageName) setAppActivityClassName(i, activityClassName)
+        }
+        if (clockAppPackage == packageName) clockAppClassName = activityClassName
+        if (calendarAppPackage == packageName) calendarAppClassName = activityClassName
+        if (screenTimeAppPackage == packageName) screenTimeAppClassName = activityClassName
+        if (appPackageSwipeLeft == packageName) appActivityClassNameSwipeLeft = activityClassName
+        if (appPackageSwipeRight == packageName) appActivityClassNameRight = activityClassName
+    }
+
     fun getAppRenameLabel(appPackage: String): String = prefs.getString(appPackage, "").toString()
 
-    fun setAppRenameLabel(appPackage: String, renameLabel: String) = prefs.edit().putString(appPackage, renameLabel).apply()
+    fun setAppRenameLabel(appPackage: String, renameLabel: String) = prefs.edit { putString(appPackage, renameLabel) }
 }

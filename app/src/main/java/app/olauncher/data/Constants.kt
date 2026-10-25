@@ -5,7 +5,6 @@ object Constants {
     object Key {
         const val FLAG = "flag"
         const val RENAME = "rename"
-        const val SEARCH_QUERY = "search_query"
     }
 
     object Dialog {
@@ -40,21 +39,6 @@ object Constants {
         fun isDateVisible(dateTimeVisibility: Int): Boolean {
             return dateTimeVisibility == ON || dateTimeVisibility == DATE_ONLY
         }
-    }
-
-    object SwipeDownAction {
-        const val SEARCH = 1
-        const val NOTIFICATIONS = 2
-    }
-
-    object TextSize {
-        const val ONE = 0.6f
-        const val TWO = 0.75f
-        const val THREE = 0.9f
-        const val FOUR = 1f
-        const val FIVE = 1.1f
-        const val SIX = 1.2f
-        const val SEVEN = 1.3f
     }
 
     object CharacterIndicator {
@@ -92,6 +76,7 @@ object Constants {
     const val FLAG_SET_SWIPE_RIGHT_APP = 12
     const val FLAG_SET_CLOCK_APP = 13
     const val FLAG_SET_CALENDAR_APP = 14
+    const val FLAG_SET_SCREEN_TIME_APP = 15
 
     const val REQUEST_CODE_ENABLE_ADMIN = 666
     const val REQUEST_CODE_LAUNCHER_SELECTOR = 678
@@ -103,7 +88,7 @@ object Constants {
     const val ONE_HOUR_IN_MILLIS = 3600000L
     const val ONE_MINUTE_IN_MILLIS = 60000L
 
-    const val MIN_ANIM_REFRESH_RATE = 10f
+    const val MIN_ANIM_REFRESH_RATE = 30f
 
     const val URL_ABOUT_OLAUNCHER = "https://tanujnotes.substack.com/p/olauncher-minimal-af-launcher?utm_source=olauncher"
     const val URL_OLAUNCHER_PRIVACY = "https://tanujnotes.notion.site/Olauncher-Privacy-Policy-dd6ac5101ddd4b3da9d27057889d44ab"
@@ -115,6 +100,7 @@ object Constants {
     const val URL_TWITTER_TANUJ = "https://x.com/tanujnotes"
     const val URL_WALLPAPERS = "https://gist.githubusercontent.com/tanujnotes/85e2d0343ace71e76615ac346fbff82b/raw"
     const val URL_NTS = "https://play.google.com/store/apps/details?id=com.makenotetoself"
+    const val URL_PENTASTIC = "https://play.google.com/store/apps/details?id=app.pentastic"
     const val URL_DEFAULT_DARK_WALLPAPER = "https://images.unsplash.com/photo-1512551980832-13df02babc9e"
     const val URL_DEFAULT_LIGHT_WALLPAPER = "https://images.unsplash.com/photo-1515549832467-8783363e19b6"
     const val URL_DUCK_SEARCH = "https://duck.co/?q="

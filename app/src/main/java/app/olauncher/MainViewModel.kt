@@ -3,8 +3,11 @@ package app.olauncher
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.LauncherApps
+import android.os.Build
 import android.os.UserHandle
+import android.os.UserManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
@@ -21,12 +24,18 @@ import app.olauncher.helper.SingleLiveEvent
 import app.olauncher.helper.WallpaperWorker
 import app.olauncher.helper.formattedTimeSpent
 import app.olauncher.helper.getAppsList
+import app.olauncher.helper.getPrivateSpaceApps
+import app.olauncher.helper.getPrivateSpaceUserHandle
 import app.olauncher.helper.hasBeenMinutes
 import app.olauncher.helper.isOlauncherDefault
 import app.olauncher.helper.isPackageInstalled
+import app.olauncher.helper.isPrivateSpaceLocked
 import app.olauncher.helper.showToast
 import app.olauncher.helper.usageStats.EventLogWrapper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -45,112 +54,297 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val launcherResetFailed = MutableLiveData<Boolean>()
     val homeAppAlignment = MutableLiveData<Int>()
     val screenTimeValue = MutableLiveData<String>()
+    private var screenTimeJob: Job? = null
+
+    val privateSpaceApps = MutableLiveData<List<AppModel>?>()
+    val privateSpaceLocked = MutableLiveData<Boolean>()
+    val privateSpaceAvailable = MutableLiveData<Boolean>()
+
+    // Suppress backToHomeScreen during Private Space lock/unlock auth
+    var isPrivateSpaceToggling = false
 
     val showDialog = SingleLiveEvent<String>()
     val checkForMessages = SingleLiveEvent<Unit?>()
     val resetLauncherLiveData = SingleLiveEvent<Unit?>()
+    // Home button for recents feature disabled
+    // val showRecentApps = SingleLiveEvent<Unit?>()
 
     fun selectedApp(appModel: AppModel, flag: Int) {
+        if (appModel is AppModel.PrivateSpaceHeader) return
         when (flag) {
             Constants.FLAG_LAUNCH_APP -> {
-                launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+                when (appModel) {
+                    is AppModel.PinnedShortcut -> launchShortcut(appModel)
+                    is AppModel.App ->
+                        launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+
+                    else -> {}
+                }
             }
 
             Constants.FLAG_HIDDEN_APPS -> {
-                launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+                if (appModel is AppModel.App) {
+                    launchApp(appModel.appPackage, appModel.activityClassName, appModel.user)
+                }
             }
 
-            Constants.FLAG_SET_HOME_APP_1 -> {
-                prefs.appName1 = appModel.appLabel
-                prefs.appPackage1 = appModel.appPackage
-                prefs.appUser1 = appModel.user.toString()
-                prefs.appActivityClassName1 = appModel.activityClassName
-                refreshHome(false)
+            Constants.FLAG_SET_HOME_APP_1 -> saveHomeApp(appModel, 1)
+            Constants.FLAG_SET_HOME_APP_2 -> saveHomeApp(appModel, 2)
+            Constants.FLAG_SET_HOME_APP_3 -> saveHomeApp(appModel, 3)
+            Constants.FLAG_SET_HOME_APP_4 -> saveHomeApp(appModel, 4)
+            Constants.FLAG_SET_HOME_APP_5 -> saveHomeApp(appModel, 5)
+            Constants.FLAG_SET_HOME_APP_6 -> saveHomeApp(appModel, 6)
+            Constants.FLAG_SET_HOME_APP_7 -> saveHomeApp(appModel, 7)
+            Constants.FLAG_SET_HOME_APP_8 -> saveHomeApp(appModel, 8)
+
+            Constants.FLAG_SET_SWIPE_LEFT_APP -> saveSwipeApp(appModel, isLeft = true)
+            Constants.FLAG_SET_SWIPE_RIGHT_APP -> saveSwipeApp(appModel, isLeft = false)
+            Constants.FLAG_SET_CLOCK_APP -> saveClockApp(appModel)
+            Constants.FLAG_SET_CALENDAR_APP -> saveCalendarApp(appModel)
+            Constants.FLAG_SET_SCREEN_TIME_APP -> saveScreenTimeApp(appModel)
+        }
+    }
+
+    private fun launchShortcut(appModel: AppModel.PinnedShortcut) {
+        val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+        val query = LauncherApps.ShortcutQuery().apply {
+            setPackage(appModel.appPackage)
+            setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
+        }
+        try {
+            val shortcut = launcher.getShortcuts(query, appModel.user)
+                ?.find { it.id == appModel.shortcutId }
+            if (shortcut == null) {
+                appContext.showToast(appContext.getString(R.string.shortcut_not_found))
+                return
+            }
+            launcher.startShortcut(shortcut, null, null)
+        } catch (_: Exception) {
+            appContext.showToast(appContext.getString(R.string.unable_to_open_shortcut))
+        }
+    }
+
+    private fun saveHomeApp(appModel: AppModel, position: Int) {
+        when (appModel) {
+            is AppModel.PrivateSpaceHeader -> return
+            is AppModel.App -> {
+                when (position) {
+                    1 -> {
+                        prefs.appName1 = appModel.appLabel
+                        prefs.appPackage1 = appModel.appPackage
+                        prefs.appUser1 = appModel.user.toString()
+                        prefs.appActivityClassName1 = appModel.activityClassName
+                        prefs.isShortcut1 = false
+                        prefs.shortcutId1 = ""
+                    }
+
+                    2 -> {
+                        prefs.appName2 = appModel.appLabel
+                        prefs.appPackage2 = appModel.appPackage
+                        prefs.appUser2 = appModel.user.toString()
+                        prefs.appActivityClassName2 = appModel.activityClassName
+                        prefs.isShortcut2 = false
+                        prefs.shortcutId2 = ""
+                    }
+
+                    3 -> {
+                        prefs.appName3 = appModel.appLabel
+                        prefs.appPackage3 = appModel.appPackage
+                        prefs.appUser3 = appModel.user.toString()
+                        prefs.appActivityClassName3 = appModel.activityClassName
+                        prefs.isShortcut3 = false
+                        prefs.shortcutId3 = ""
+                    }
+
+                    4 -> {
+                        prefs.appName4 = appModel.appLabel
+                        prefs.appPackage4 = appModel.appPackage
+                        prefs.appUser4 = appModel.user.toString()
+                        prefs.appActivityClassName4 = appModel.activityClassName
+                        prefs.isShortcut4 = false
+                        prefs.shortcutId4 = ""
+                    }
+
+                    5 -> {
+                        prefs.appName5 = appModel.appLabel
+                        prefs.appPackage5 = appModel.appPackage
+                        prefs.appUser5 = appModel.user.toString()
+                        prefs.appActivityClassName5 = appModel.activityClassName
+                        prefs.isShortcut5 = false
+                        prefs.shortcutId5 = ""
+                    }
+
+                    6 -> {
+                        prefs.appName6 = appModel.appLabel
+                        prefs.appPackage6 = appModel.appPackage
+                        prefs.appUser6 = appModel.user.toString()
+                        prefs.appActivityClassName6 = appModel.activityClassName
+                        prefs.isShortcut6 = false
+                        prefs.shortcutId6 = ""
+                    }
+
+                    7 -> {
+                        prefs.appName7 = appModel.appLabel
+                        prefs.appPackage7 = appModel.appPackage
+                        prefs.appUser7 = appModel.user.toString()
+                        prefs.appActivityClassName7 = appModel.activityClassName
+                        prefs.isShortcut7 = false
+                        prefs.shortcutId7 = ""
+                    }
+
+                    8 -> {
+                        prefs.appName8 = appModel.appLabel
+                        prefs.appPackage8 = appModel.appPackage
+                        prefs.appUser8 = appModel.user.toString()
+                        prefs.appActivityClassName8 = appModel.activityClassName
+                        prefs.isShortcut8 = false
+                        prefs.shortcutId8 = ""
+                    }
+                }
             }
 
-            Constants.FLAG_SET_HOME_APP_2 -> {
-                prefs.appName2 = appModel.appLabel
-                prefs.appPackage2 = appModel.appPackage
-                prefs.appUser2 = appModel.user.toString()
-                prefs.appActivityClassName2 = appModel.activityClassName
-                refreshHome(false)
+            is AppModel.PinnedShortcut -> {
+                when (position) {
+                    1 -> {
+                        prefs.appName1 = appModel.appLabel
+                        prefs.appPackage1 = appModel.appPackage
+                        prefs.appUser1 = appModel.user.toString()
+                        prefs.appActivityClassName1 = null
+                        prefs.isShortcut1 = true
+                        prefs.shortcutId1 = appModel.shortcutId
+                    }
+
+                    2 -> {
+                        prefs.appName2 = appModel.appLabel
+                        prefs.appPackage2 = appModel.appPackage
+                        prefs.appUser2 = appModel.user.toString()
+                        prefs.appActivityClassName2 = null
+                        prefs.isShortcut2 = true
+                        prefs.shortcutId2 = appModel.shortcutId
+                    }
+
+                    3 -> {
+                        prefs.appName3 = appModel.appLabel
+                        prefs.appPackage3 = appModel.appPackage
+                        prefs.appUser3 = appModel.user.toString()
+                        prefs.appActivityClassName3 = null
+                        prefs.isShortcut3 = true
+                        prefs.shortcutId3 = appModel.shortcutId
+                    }
+
+                    4 -> {
+                        prefs.appName4 = appModel.appLabel
+                        prefs.appPackage4 = appModel.appPackage
+                        prefs.appUser4 = appModel.user.toString()
+                        prefs.appActivityClassName4 = null
+                        prefs.isShortcut4 = true
+                        prefs.shortcutId4 = appModel.shortcutId
+                    }
+
+                    5 -> {
+                        prefs.appName5 = appModel.appLabel
+                        prefs.appPackage5 = appModel.appPackage
+                        prefs.appUser5 = appModel.user.toString()
+                        prefs.appActivityClassName5 = null
+                        prefs.isShortcut5 = true
+                        prefs.shortcutId5 = appModel.shortcutId
+                    }
+
+                    6 -> {
+                        prefs.appName6 = appModel.appLabel
+                        prefs.appPackage6 = appModel.appPackage
+                        prefs.appUser6 = appModel.user.toString()
+                        prefs.appActivityClassName6 = null
+                        prefs.isShortcut6 = true
+                        prefs.shortcutId6 = appModel.shortcutId
+                    }
+
+                    7 -> {
+                        prefs.appName7 = appModel.appLabel
+                        prefs.appPackage7 = appModel.appPackage
+                        prefs.appUser7 = appModel.user.toString()
+                        prefs.appActivityClassName7 = null
+                        prefs.isShortcut7 = true
+                        prefs.shortcutId7 = appModel.shortcutId
+                    }
+
+                    8 -> {
+                        prefs.appName8 = appModel.appLabel
+                        prefs.appPackage8 = appModel.appPackage
+                        prefs.appUser8 = appModel.user.toString()
+                        prefs.appActivityClassName8 = null
+                        prefs.isShortcut8 = true
+                        prefs.shortcutId8 = appModel.shortcutId
+                    }
+                }
+            }
+        }
+        refreshHome(false)
+    }
+
+    private fun saveSwipeApp(appModel: AppModel, isLeft: Boolean) {
+        when (appModel) {
+            is AppModel.PrivateSpaceHeader -> return
+            is AppModel.App -> {
+                if (isLeft) {
+                    prefs.appNameSwipeLeft = appModel.appLabel
+                    prefs.appPackageSwipeLeft = appModel.appPackage
+                    prefs.appUserSwipeLeft = appModel.user.toString()
+                    prefs.appActivityClassNameSwipeLeft = appModel.activityClassName
+                    prefs.isShortcutSwipeLeft = false
+                    prefs.shortcutIdSwipeLeft = ""
+                } else {
+                    prefs.appNameSwipeRight = appModel.appLabel
+                    prefs.appPackageSwipeRight = appModel.appPackage
+                    prefs.appUserSwipeRight = appModel.user.toString()
+                    prefs.appActivityClassNameRight = appModel.activityClassName
+                    prefs.isShortcutSwipeRight = false
+                    prefs.shortcutIdSwipeRight = ""
+                }
             }
 
-            Constants.FLAG_SET_HOME_APP_3 -> {
-                prefs.appName3 = appModel.appLabel
-                prefs.appPackage3 = appModel.appPackage
-                prefs.appUser3 = appModel.user.toString()
-                prefs.appActivityClassName3 = appModel.activityClassName
-                refreshHome(false)
+            is AppModel.PinnedShortcut -> {
+                if (isLeft) {
+                    prefs.appNameSwipeLeft = appModel.appLabel
+                    prefs.appPackageSwipeLeft = appModel.appPackage
+                    prefs.appUserSwipeLeft = appModel.user.toString()
+                    prefs.appActivityClassNameSwipeLeft = null
+                    prefs.isShortcutSwipeLeft = true
+                    prefs.shortcutIdSwipeLeft = appModel.shortcutId
+                } else {
+                    prefs.appNameSwipeRight = appModel.appLabel
+                    prefs.appPackageSwipeRight = appModel.appPackage
+                    prefs.appUserSwipeRight = appModel.user.toString()
+                    prefs.appActivityClassNameRight = null
+                    prefs.isShortcutSwipeRight = true
+                    prefs.shortcutIdSwipeRight = appModel.shortcutId
+                }
             }
+        }
+        updateSwipeApps()
+    }
 
-            Constants.FLAG_SET_HOME_APP_4 -> {
-                prefs.appName4 = appModel.appLabel
-                prefs.appPackage4 = appModel.appPackage
-                prefs.appUser4 = appModel.user.toString()
-                prefs.appActivityClassName4 = appModel.activityClassName
-                refreshHome(false)
-            }
+    private fun saveClockApp(appModel: AppModel) {
+        if (appModel is AppModel.App) {
+            prefs.clockAppPackage = appModel.appPackage
+            prefs.clockAppUser = appModel.user.toString()
+            prefs.clockAppClassName = appModel.activityClassName
+        }
+    }
 
-            Constants.FLAG_SET_HOME_APP_5 -> {
-                prefs.appName5 = appModel.appLabel
-                prefs.appPackage5 = appModel.appPackage
-                prefs.appUser5 = appModel.user.toString()
-                prefs.appActivityClassName5 = appModel.activityClassName
-                refreshHome(false)
-            }
+    private fun saveCalendarApp(appModel: AppModel) {
+        if (appModel is AppModel.App) {
+            prefs.calendarAppPackage = appModel.appPackage
+            prefs.calendarAppUser = appModel.user.toString()
+            prefs.calendarAppClassName = appModel.activityClassName
+        }
+    }
 
-            Constants.FLAG_SET_HOME_APP_6 -> {
-                prefs.appName6 = appModel.appLabel
-                prefs.appPackage6 = appModel.appPackage
-                prefs.appUser6 = appModel.user.toString()
-                prefs.appActivityClassName6 = appModel.activityClassName
-                refreshHome(false)
-            }
-
-            Constants.FLAG_SET_HOME_APP_7 -> {
-                prefs.appName7 = appModel.appLabel
-                prefs.appPackage7 = appModel.appPackage
-                prefs.appUser7 = appModel.user.toString()
-                prefs.appActivityClassName7 = appModel.activityClassName
-                refreshHome(false)
-            }
-
-            Constants.FLAG_SET_HOME_APP_8 -> {
-                prefs.appName8 = appModel.appLabel
-                prefs.appPackage8 = appModel.appPackage
-                prefs.appUser8 = appModel.user.toString()
-                prefs.appActivityClassName8 = appModel.activityClassName
-                refreshHome(false)
-            }
-
-            Constants.FLAG_SET_SWIPE_LEFT_APP -> {
-                prefs.appNameSwipeLeft = appModel.appLabel
-                prefs.appPackageSwipeLeft = appModel.appPackage
-                prefs.appUserSwipeLeft = appModel.user.toString()
-                prefs.appActivityClassNameSwipeLeft = appModel.activityClassName
-                updateSwipeApps()
-            }
-
-            Constants.FLAG_SET_SWIPE_RIGHT_APP -> {
-                prefs.appNameSwipeRight = appModel.appLabel
-                prefs.appPackageSwipeRight = appModel.appPackage
-                prefs.appUserSwipeRight = appModel.user.toString()
-                prefs.appActivityClassNameRight = appModel.activityClassName
-                updateSwipeApps()
-            }
-
-            Constants.FLAG_SET_CLOCK_APP -> {
-                prefs.clockAppPackage = appModel.appPackage
-                prefs.clockAppUser = appModel.user.toString()
-                prefs.clockAppClassName = appModel.activityClassName
-            }
-
-            Constants.FLAG_SET_CALENDAR_APP -> {
-                prefs.calendarAppPackage = appModel.appPackage
-                prefs.calendarAppUser = appModel.user.toString()
-                prefs.calendarAppClassName = appModel.activityClassName
-            }
+    private fun saveScreenTimeApp(appModel: AppModel) {
+        if (appModel is AppModel.App) {
+            prefs.screenTimeAppPackage = appModel.appPackage
+            prefs.screenTimeAppUser = appModel.user.toString()
+            prefs.screenTimeAppClassName = appModel.activityClassName
         }
     }
 
@@ -174,8 +368,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val launcher = appContext.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
         val activityInfo = launcher.getActivityList(packageName, userHandle)
 
-        val component = if (activityClassName.isNullOrBlank()) {
-            // activityClassName will be null for hidden apps.
+        val isActivityValid = activityClassName.isNullOrBlank().not()
+                && activityInfo.any { it.componentName.className == activityClassName }
+
+        val component = if (isActivityValid)
+            ComponentName(packageName, activityClassName)
+        else {
             when (activityInfo.size) {
                 0 -> {
                     appContext.showToast(appContext.getString(R.string.app_not_found))
@@ -184,9 +382,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 1 -> ComponentName(packageName, activityInfo[0].name)
                 else -> ComponentName(packageName, activityInfo[activityInfo.size - 1].name)
-            }
-        } else {
-            ComponentName(packageName, activityClassName)
+            }.also { prefs.updateAppActivityClassName(packageName, it.className) }
         }
 
         try {
@@ -204,13 +400,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getAppList(includeHiddenApps: Boolean = false) {
         viewModelScope.launch {
-            appList.value = getAppsList(appContext, prefs, includeRegularApps = true, includeHiddenApps)
+            val apps = getAppsList(appContext, prefs, includeRegularApps = true, includeHiddenApps)
+            appList.value = apps
         }
+        getPrivateSpaceAppList()
     }
 
     fun getHiddenApps() {
         viewModelScope.launch {
-            hiddenApps.value = getAppsList(appContext, prefs, includeRegularApps = false, includeHiddenApps = true)
+            hiddenApps.value =
+                getAppsList(appContext, prefs, includeRegularApps = false, includeHiddenApps = true)
         }
     }
 
@@ -222,7 +421,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val uploadWorkRequest = PeriodicWorkRequestBuilder<WallpaperWorker>(8, TimeUnit.HOURS)
+        val uploadWorkRequest = PeriodicWorkRequestBuilder<WallpaperWorker>(4, TimeUnit.HOURS)
             .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.HOURS)
             .setConstraints(constraints)
             .build()
@@ -247,27 +446,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getTodaysScreenTime() {
-        if (prefs.screenTimeLastUpdated.hasBeenMinutes(1).not()) return
+        // Skip the once-a-minute limit when there's nothing to show yet, e.g. after a process restart
+        if (screenTimeValue.value != null && prefs.screenTimeLastUpdated.hasBeenMinutes(1).not()) return
+        if (screenTimeJob?.isActive == true) return
 
-        val eventLogWrapper = EventLogWrapper(appContext)
-        // Start of today in millis
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+        screenTimeJob = viewModelScope.launch {
+            // Start of today in millis
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val startTime = calendar.timeInMillis
+            val endTime = System.currentTimeMillis()
+
+            // Querying a whole day of usage events is slow, so keep it off the main thread
+            val timeSpent = withContext(Dispatchers.IO) {
+                val eventLogWrapper = EventLogWrapper(appContext)
+                eventLogWrapper.aggregateSimpleUsageStats(
+                    eventLogWrapper.aggregateForegroundStats(
+                        eventLogWrapper.getForegroundStatsByTimestamps(startTime, endTime)
+                    )
+                )
+            }
+            screenTimeValue.value = appContext.formattedTimeSpent(timeSpent)
+            prefs.screenTimeLastUpdated = endTime
         }
-        val startTime = calendar.timeInMillis
-        val endTime = System.currentTimeMillis()
+    }
 
-        val timeSpent = eventLogWrapper.aggregateSimpleUsageStats(
-            eventLogWrapper.aggregateForegroundStats(
-                eventLogWrapper.getForegroundStatsByTimestamps(startTime, endTime)
-            )
-        )
-        val viewTimeSpent = appContext.formattedTimeSpent(timeSpent)
-        screenTimeValue.postValue(viewTimeSpent)
-        prefs.screenTimeLastUpdated = endTime
+    fun getPrivateSpaceAppList() {
+        viewModelScope.launch {
+            val handle = getPrivateSpaceUserHandle(appContext)
+            privateSpaceAvailable.value = handle != null
+            if (handle != null) {
+                privateSpaceLocked.value = isPrivateSpaceLocked(appContext, handle)
+                privateSpaceApps.value = getPrivateSpaceApps(appContext, prefs)
+            } else {
+                privateSpaceLocked.value = true
+                privateSpaceApps.value = emptyList()
+            }
+        }
+    }
+
+    fun openPrivateSpaceSettings() {
+        try {
+            val intent = Intent("android.settings.PRIVATE_SPACE_SETTINGS")
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
+            } catch (_: Exception) {
+                appContext.showToast(appContext.getString(R.string.unable_to_open_app))
+            }
+        }
+    }
+
+    fun togglePrivateSpaceLock() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return
+        val handle = getPrivateSpaceUserHandle(appContext) ?: return
+        try {
+            isPrivateSpaceToggling = true
+            val userManager = appContext.getSystemService(Context.USER_SERVICE) as UserManager
+            val currentlyLocked = userManager.isQuietModeEnabled(handle)
+            userManager.requestQuietModeEnabled(!currentlyLocked, handle)
+        } catch (e: Exception) {
+            isPrivateSpaceToggling = false
+            e.printStackTrace()
+        }
     }
 
     fun setDefaultClockApp() {
