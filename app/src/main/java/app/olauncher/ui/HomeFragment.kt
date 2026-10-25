@@ -13,10 +13,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
@@ -30,6 +32,7 @@ import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.FolderStore
 import app.olauncher.data.Prefs
+import app.olauncher.data.VerbFolder
 import app.olauncher.databinding.FragmentHomeBinding
 import app.olauncher.helper.appUsagePermissionGranted
 import app.olauncher.helper.dpToPx
@@ -42,6 +45,7 @@ import app.olauncher.helper.openCalendar
 import app.olauncher.helper.openCameraApp
 import app.olauncher.helper.openDialerApp
 import app.olauncher.helper.setPlainWallpaperByTheme
+import app.olauncher.helper.showPopupMenu
 import app.olauncher.helper.showToast
 import app.olauncher.listener.OnSwipeTouchListener
 import app.olauncher.listener.ViewSwipeTouchListener
@@ -53,6 +57,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private lateinit var prefs: Prefs
     private lateinit var folderStore: FolderStore
+    private var expandedFolderId: Long? = null
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -101,14 +106,22 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
             else -> {
                 val tag = view.tag?.toString() ?: ""
-                if (tag.startsWith(FOLDER_TAG)) {
-                    folderClicked(tag.removePrefix(FOLDER_TAG))
-                } else {
-                    try { // Launch app
-                        val appLocation = tag.toInt()
-                        homeAppClicked(appLocation)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                when {
+                    tag.startsWith(FAPP_TAG) -> {
+                        val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
+                        if (parts.size == 2)
+                            folderAppClicked(parts[0].toLongOrNull() ?: 0L, parts[1])
+                    }
+
+                    tag.startsWith(FOLDER_TAG) -> folderClicked(tag.removePrefix(FOLDER_TAG))
+
+                    else -> {
+                        try { // Launch app
+                            val appLocation = tag.toInt()
+                            homeAppClicked(appLocation)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
             }
@@ -171,8 +184,16 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 }
             }
             else -> {
-                if ((view.tag?.toString() ?: "").startsWith(FOLDER_TAG))
-                    showAppList(Constants.FLAG_LAUNCH_APP)
+                val tag = view.tag?.toString() ?: ""
+                val folderId =
+                    if (tag.startsWith(FOLDER_TAG)) tag.removePrefix(FOLDER_TAG).toLongOrNull() else null
+                if (folderId != null) {
+                    showFolderMenu(view, folderId)
+                } else if (tag.startsWith(FAPP_TAG)) {
+                    val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
+                    if (parts.size == 2)
+                        showFolderAppMenu(view, parts[0].toLongOrNull() ?: 0L, parts[1])
+                }
             }
         }
         return true
@@ -482,24 +503,23 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         )
     }
 
-    private fun showAppList(flag: Int, rename: Boolean = false, includeHiddenApps: Boolean = false) {
+    private fun showAppList(
+        flag: Int,
+        rename: Boolean = false,
+        includeHiddenApps: Boolean = false,
+        folderId: Long = 0L,
+    ) {
         viewModel.getAppList(includeHiddenApps)
+        val args = bundleOf(
+            Constants.Key.FLAG to flag,
+            Constants.Key.RENAME to rename
+        )
+        if (folderId > 0)
+            args.putLong(Constants.Key.FOLDER_ID, folderId)
         try {
-            findNavController().navigate(
-                R.id.action_mainFragment_to_appListFragment,
-                bundleOf(
-                    Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename
-                )
-            )
+            findNavController().navigate(R.id.action_mainFragment_to_appListFragment, args)
         } catch (e: Exception) {
-            findNavController().navigate(
-                R.id.appListFragment,
-                bundleOf(
-                    Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename
-                )
-            )
+            findNavController().navigate(R.id.appListFragment, args)
             e.printStackTrace()
         }
     }
@@ -649,7 +669,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
             override fun onSwipeUp() {
                 super.onSwipeUp()
-                showAppList(Constants.FLAG_LAUNCH_APP)
+                if (!onFolderRowSwipeUp(view))
+                    showAppList(Constants.FLAG_LAUNCH_APP)
             }
 
             override fun onSwipeDown() {
@@ -675,29 +696,136 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
         )
         val folders = folderStore.folders
+        val expanded = expandedFolderId?.let { id -> folders.firstOrNull { it.id == id } }
+
+        val rows = mutableListOf<HomeRow>()
+        if (expanded != null) {
+            rows.add(HomeRow.FolderRow(expanded))
+            expanded.apps.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
+        } else {
+            folders.take(views.size).forEach { rows.add(HomeRow.FolderRow(it)) }
+        }
 
         views.forEachIndexed { index, view ->
-            val folder = folders.getOrNull(index)
-            if (folder == null) {
-                view.visibility = View.GONE
-                view.text = ""
-                view.tag = null
-            } else {
-                view.text = folder.verb
-                view.tag = FOLDER_TAG + folder.id
-                view.visibility = View.VISIBLE
+            when (val row = rows.getOrNull(index)) {
+                is HomeRow.FolderRow -> {
+                    view.text = row.folder.verb
+                    view.tag = FOLDER_TAG + row.folder.id
+                    view.visibility = View.VISIBLE
+                }
+
+                is HomeRow.AppRow -> {
+                    view.text = appLabelFor(row.packageName)
+                    view.tag = FAPP_TAG + row.folderId + ":" + row.packageName
+                    view.visibility = View.VISIBLE
+                }
+
+                null -> {
+                    view.visibility = View.GONE
+                    view.text = ""
+                    view.tag = null
+                }
             }
         }
     }
 
+    private fun appLabelFor(packageName: String): String = try {
+        val pm = requireContext().packageManager
+        val info = pm.getApplicationInfo(packageName, 0)
+        pm.getApplicationLabel(info).toString()
+    } catch (e: Exception) {
+        packageName
+    }
+
     private fun folderClicked(folderId: String) {
         val folder = folderStore.folders.firstOrNull { it.id.toString() == folderId } ?: return
+        if (expandedFolderId == folder.id) {
+            expandedFolderId = null
+            populateFolders()
+            return
+        }
         val app = folder.tapApp
         if (app == null) {
             requireContext().showToast(getString(R.string.folder_add_apps_hint))
             return
         }
         launchFolderApp(app)
+    }
+
+    private fun folderAppClicked(folderId: Long, packageName: String) {
+        if (folderId <= 0) return
+        folderStore.setDefaultApp(folderId, packageName)
+        launchFolderApp(packageName)
+    }
+
+    /** Expand/collapse on swipe-up when the swiped row shows a folder. */
+    private fun onFolderRowSwipeUp(view: View): Boolean {
+        val tag = view.tag?.toString() ?: return false
+        if (!tag.startsWith(FOLDER_TAG)) return false
+        val id = tag.removePrefix(FOLDER_TAG).toLongOrNull() ?: return false
+        expandedFolderId = if (expandedFolderId == id) null else id
+        populateFolders()
+        return true
+    }
+
+    private fun showFolderMenu(view: View, folderId: Long) {
+        view.showPopupMenu(configure = { menu ->
+            menu.add(0, MENU_ADD_APPS, 0, getString(R.string.folder_menu_add_apps))
+            menu.add(0, MENU_RENAME, 1, getString(R.string.folder_menu_rename))
+            menu.add(0, MENU_DELETE, 2, getString(R.string.folder_menu_delete))
+            menu.add(0, MENU_NEW_FOLDER, 3, getString(R.string.folder_menu_new))
+        }) { item ->
+            when (item.itemId) {
+                MENU_ADD_APPS -> showAppList(Constants.FLAG_ADD_TO_FOLDER, folderId = folderId)
+
+                MENU_RENAME -> {
+                    val current = folderStore.folders.firstOrNull { it.id == folderId }
+                    showTextDialog(getString(R.string.folder_menu_rename), current?.verb ?: "") { name ->
+                        if (name.isNotEmpty()) {
+                            current?.let { folderStore.update(it.copy(verb = name)) }
+                            populateFolders()
+                        }
+                    }
+                }
+
+                MENU_DELETE -> {
+                    folderStore.delete(folderId)
+                    expandedFolderId = null
+                    populateFolders()
+                }
+
+                MENU_NEW_FOLDER -> showTextDialog(getString(R.string.folder_menu_new), "") { name ->
+                    if (name.isNotEmpty()) {
+                        folderStore.createFolder(name)
+                        populateFolders()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showFolderAppMenu(view: View, folderId: Long, packageName: String) {
+        view.showPopupMenu(configure = { menu ->
+            menu.add(0, MENU_REMOVE_APP, 0, getString(R.string.folder_menu_remove_app))
+        }) { item ->
+            if (item.itemId == MENU_REMOVE_APP) {
+                folderStore.removeApp(folderId, packageName)
+                populateFolders()
+            }
+        }
+    }
+
+    private fun showTextDialog(title: String, initial: String, onOk: (String) -> Unit) {
+        val input = EditText(requireContext())
+        input.setText(initial)
+        input.setSelection(initial.length)
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ -> onOk(input.text.toString().trim()) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        input.requestFocus()
     }
 
     private fun launchFolderApp(packageName: String) {
@@ -715,8 +843,19 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
     }
 
+    private sealed interface HomeRow {
+        data class FolderRow(val folder: VerbFolder) : HomeRow
+        data class AppRow(val folderId: Long, val packageName: String) : HomeRow
+    }
+
     companion object {
         private const val FOLDER_TAG = "folder:"
+        private const val FAPP_TAG = "fapp:"
+        private const val MENU_ADD_APPS = 21
+        private const val MENU_RENAME = 22
+        private const val MENU_DELETE = 23
+        private const val MENU_NEW_FOLDER = 24
+        private const val MENU_REMOVE_APP = 25
     }
 
     override fun onDestroyView() {

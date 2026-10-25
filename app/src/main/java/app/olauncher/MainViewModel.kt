@@ -19,6 +19,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
+import app.olauncher.data.FolderStore
 import app.olauncher.data.Prefs
 import app.olauncher.helper.SingleLiveEvent
 import app.olauncher.helper.WallpaperWorker
@@ -43,6 +44,7 @@ import java.util.concurrent.TimeUnit
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext by lazy { application.applicationContext }
     private val prefs = Prefs(appContext)
+    private val folderStore = FolderStore(appContext)
 
     val firstOpen = MutableLiveData<Boolean>()
     val refreshHome = MutableLiveData<Boolean>()
@@ -69,7 +71,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Home button for recents feature disabled
     // val showRecentApps = SingleLiveEvent<Unit?>()
 
-    fun selectedApp(appModel: AppModel, flag: Int) {
+    fun selectedApp(appModel: AppModel, flag: Int, folderId: Long = 0L) {
         if (appModel is AppModel.PrivateSpaceHeader) return
         when (flag) {
             Constants.FLAG_LAUNCH_APP -> {
@@ -102,6 +104,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Constants.FLAG_SET_CLOCK_APP -> saveClockApp(appModel)
             Constants.FLAG_SET_CALENDAR_APP -> saveCalendarApp(appModel)
             Constants.FLAG_SET_SCREEN_TIME_APP -> saveScreenTimeApp(appModel)
+
+            Constants.FLAG_ADD_TO_FOLDER -> addToFolder(appModel, folderId)
         }
     }
 
@@ -346,6 +350,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             prefs.screenTimeAppUser = appModel.user.toString()
             prefs.screenTimeAppClassName = appModel.activityClassName
         }
+    }
+
+    private fun addToFolder(appModel: AppModel, folderId: Long) {
+        if (folderId <= 0 || appModel !is AppModel.App) return
+        folderStore.addApp(folderId, appModel.appPackage)
+        refreshHome(false)
+        appContext.showToast(appContext.getString(R.string.app_added_to_folder))
     }
 
     fun firstOpen(value: Boolean) {

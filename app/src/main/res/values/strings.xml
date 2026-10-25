@@ -175,4 +175,11 @@
     <string name="unable_to_open_shortcut">Unable to open shortcut</string>
     <string name="folder_add_apps_hint">No apps in this folder yet</string>
     <string name="folder_app_missing">App not installed</string>
+    <string name="folder_menu_add_apps">Add apps</string>
+    <string name="folder_menu_rename">Rename folder</string>
+    <string name="folder_menu_delete">Delete folder</string>
+    <string name="folder_menu_new">New folder</string>
+    <string name="folder_menu_remove_app">Remove from folder</string>
+    <string name="folder_select_app">Choose apps to add</string>
+    <string name="app_added_to_folder">Added to folder</string>
 </resources>
