@@ -3,6 +3,7 @@ package app.olauncher.ui
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.res.Configuration
 import android.os.BatteryManager
 import android.os.Build
@@ -16,14 +17,10 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
-import androidx.annotation.VisibleForTesting
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
-import androidx.activity.result.contract.ActivityResultContracts
-import android.speech.RecognizerIntent
-import android.app.Activity
 import androidx.core.view.setPadding
-import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
@@ -43,8 +40,6 @@ import app.olauncher.helper.openAlarmApp
 import app.olauncher.helper.openCalendar
 import app.olauncher.helper.openCameraApp
 import app.olauncher.helper.openDialerApp
-import app.olauncher.helper.openSearch
-import app.olauncher.helper.openVoiceSearch
 import app.olauncher.helper.setPlainWallpaperByTheme
 import app.olauncher.helper.showToast
 import app.olauncher.listener.OnSwipeTouchListener
@@ -53,24 +48,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener {
+class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListener {
 
-    @VisibleForTesting
-    lateinit var prefs: Prefs
+    private lateinit var prefs: Prefs
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
-
-    private val voiceSearchLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spokenText: ArrayList<String>? =
-                result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            spokenText?.let {
-                if (it.isNotEmpty()) {
-                    showAppList(Constants.FLAG_LAUNCH_APP, false, false, it[0])
-                }
-            }
-        }
-    }
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
@@ -82,9 +64,7 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        if (!::prefs.isInitialized) {
-            prefs = Prefs(requireContext())
-        }
+        prefs = Prefs(requireContext())
         viewModel = activity?.run {
             ViewModelProvider(this)[MainViewModel::class.java]
         } ?: throw Exception("Invalid Activity")
@@ -108,13 +88,12 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
     override fun onClick(view: View) {
         when (view.id) {
             R.id.lock -> {}
+            // Home button for recents feature disabled
+            // R.id.recents -> {}
             R.id.clock -> openClockApp()
             R.id.date -> openCalendarApp()
             R.id.setDefaultLauncher -> viewModel.resetLauncherLiveData.call()
             R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
-            R.id.tvScreenTime -> openScreenTimeDigitalWellbeing()
-            R.id.ivVoiceSearch -> startVoiceRecognition()
-
 
             else -> {
                 try { // Launch app
@@ -175,6 +154,13 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
                 prefs.calendarAppUser = ""
             }
 
+            R.id.tvScreenTime -> {
+                showAppList(Constants.FLAG_SET_SCREEN_TIME_APP)
+                prefs.screenTimeAppPackage = ""
+                prefs.screenTimeAppClassName = ""
+                prefs.screenTimeAppUser = ""
+            }
+
             R.id.setDefaultLauncher -> {
                 prefs.hideSetDefaultLauncher = true
                 binding.setDefaultLauncher.visibility = View.GONE
@@ -198,17 +184,15 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         }
         viewModel.isOlauncherDefault.observe(viewLifecycleOwner, Observer {
             if (it != true) {
-                if (prefs.dailyWallpaper) {
+                if (prefs.dailyWallpaper && prefs.appTheme == AppCompatDelegate.MODE_NIGHT_YES) {
                     prefs.dailyWallpaper = false
                     viewModel.cancelWallpaperWorker()
                 }
                 prefs.homeBottomAlignment = false
                 setHomeAlignment()
             }
-            if (binding.firstRunTips.visibility == View.VISIBLE) return@Observer
+            if (binding.firstRunTips.isVisible) return@Observer
             binding.setDefaultLauncher.isVisible = it.not() && prefs.hideSetDefaultLauncher.not()
-//            if (it) binding.setDefaultLauncher.visibility = View.GONE
-//            else binding.setDefaultLauncher.visibility = View.VISIBLE
         })
         viewModel.homeAppAlignment.observe(viewLifecycleOwner) {
             setHomeAlignment(it)
@@ -219,6 +203,10 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         viewModel.screenTimeValue.observe(viewLifecycleOwner) {
             it?.let { binding.tvScreenTime.text = it }
         }
+        // Home button for recents feature disabled
+        // viewModel.showRecentApps.observe(viewLifecycleOwner) {
+        //     binding.recents.performClick()
+        // }
     }
 
     private fun initSwipeTouchListener() {
@@ -236,6 +224,8 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
     private fun initClickListeners() {
         binding.lock.setOnClickListener(this)
+        // Home button for recents feature disabled
+        // binding.recents.setOnClickListener(this)
         binding.clock.setOnClickListener(this)
         binding.date.setOnClickListener(this)
         binding.clock.setOnLongClickListener(this)
@@ -243,7 +233,25 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         binding.setDefaultLauncher.setOnClickListener(this)
         binding.setDefaultLauncher.setOnLongClickListener(this)
         binding.tvScreenTime.setOnClickListener(this)
-        binding.ivVoiceSearch?.setOnClickListener(this)
+        binding.tvScreenTime.setOnLongClickListener(this)
+
+        // These fire only on d-pad/keyboard events; touch is consumed by ViewSwipeTouchListener
+        binding.homeApp1.setOnClickListener(this)
+        binding.homeApp2.setOnClickListener(this)
+        binding.homeApp3.setOnClickListener(this)
+        binding.homeApp4.setOnClickListener(this)
+        binding.homeApp5.setOnClickListener(this)
+        binding.homeApp6.setOnClickListener(this)
+        binding.homeApp7.setOnClickListener(this)
+        binding.homeApp8.setOnClickListener(this)
+        binding.homeApp1.setOnLongClickListener(this)
+        binding.homeApp2.setOnLongClickListener(this)
+        binding.homeApp3.setOnLongClickListener(this)
+        binding.homeApp4.setOnLongClickListener(this)
+        binding.homeApp5.setOnLongClickListener(this)
+        binding.homeApp6.setOnLongClickListener(this)
+        binding.homeApp7.setOnLongClickListener(this)
+        binding.homeApp8.setOnLongClickListener(this)
     }
 
     private fun setHomeAlignment(horizontalGravity: Int = prefs.homeAlignment) {
@@ -316,62 +324,99 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         if (homeAppsNum == 0) return
 
         binding.homeApp1.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp1, prefs.appName1, prefs.appPackage1, prefs.appUser1)) {
+        if (!setHomeAppText(binding.homeApp1, prefs.appName1, prefs.appPackage1, prefs.appUser1, prefs.isShortcut1, prefs.shortcutId1)) {
             prefs.appName1 = ""
             prefs.appPackage1 = ""
         }
         if (homeAppsNum == 1) return
 
         binding.homeApp2.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp2, prefs.appName2, prefs.appPackage2, prefs.appUser2)) {
+        if (!setHomeAppText(binding.homeApp2, prefs.appName2, prefs.appPackage2, prefs.appUser2, prefs.isShortcut2, prefs.shortcutId2)) {
             prefs.appName2 = ""
             prefs.appPackage2 = ""
         }
         if (homeAppsNum == 2) return
 
         binding.homeApp3.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp3, prefs.appName3, prefs.appPackage3, prefs.appUser3)) {
+        if (!setHomeAppText(binding.homeApp3, prefs.appName3, prefs.appPackage3, prefs.appUser3, prefs.isShortcut3, prefs.shortcutId3)) {
             prefs.appName3 = ""
             prefs.appPackage3 = ""
         }
         if (homeAppsNum == 3) return
 
         binding.homeApp4.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp4, prefs.appName4, prefs.appPackage4, prefs.appUser4)) {
+        if (!setHomeAppText(binding.homeApp4, prefs.appName4, prefs.appPackage4, prefs.appUser4, prefs.isShortcut4, prefs.shortcutId4)) {
             prefs.appName4 = ""
             prefs.appPackage4 = ""
         }
         if (homeAppsNum == 4) return
 
         binding.homeApp5.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp5, prefs.appName5, prefs.appPackage5, prefs.appUser5)) {
+        if (!setHomeAppText(binding.homeApp5, prefs.appName5, prefs.appPackage5, prefs.appUser5, prefs.isShortcut5, prefs.shortcutId5)) {
             prefs.appName5 = ""
             prefs.appPackage5 = ""
         }
         if (homeAppsNum == 5) return
 
         binding.homeApp6.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp6, prefs.appName6, prefs.appPackage6, prefs.appUser6)) {
+        if (!setHomeAppText(binding.homeApp6, prefs.appName6, prefs.appPackage6, prefs.appUser6, prefs.isShortcut6, prefs.shortcutId6)) {
             prefs.appName6 = ""
             prefs.appPackage6 = ""
         }
         if (homeAppsNum == 6) return
 
         binding.homeApp7.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp7, prefs.appName7, prefs.appPackage7, prefs.appUser7)) {
+        if (!setHomeAppText(binding.homeApp7, prefs.appName7, prefs.appPackage7, prefs.appUser7, prefs.isShortcut7, prefs.shortcutId7)) {
             prefs.appName7 = ""
             prefs.appPackage7 = ""
         }
         if (homeAppsNum == 7) return
 
         binding.homeApp8.visibility = View.VISIBLE
-        if (!setHomeAppText(binding.homeApp8, prefs.appName8, prefs.appPackage8, prefs.appUser8)) {
+        if (!setHomeAppText(binding.homeApp8, prefs.appName8, prefs.appPackage8, prefs.appUser8, prefs.isShortcut8, prefs.shortcutId8)) {
             prefs.appName8 = ""
             prefs.appPackage8 = ""
         }
     }
 
-    private fun setHomeAppText(textView: TextView, appName: String, packageName: String, userString: String): Boolean {
+    private fun setHomeAppText(
+        textView: TextView,
+        appName: String,
+        packageName: String,
+        userString: String,
+        isShortcut: Boolean,
+        shortcutId: String?,
+    ): Boolean {
+        // Get user handle for the app/shortcut
+        val userHandle = getUserHandleFromString(requireContext(), userString)
+
+        // If it's a shortcut, verify it still exists
+        if (isShortcut) {
+            val launcherApps = requireContext().getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+
+            // Query for the specific shortcut
+            val query = LauncherApps.ShortcutQuery().apply {
+                setPackage(packageName)
+                setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
+            }
+
+            try {
+                val shortcuts = launcherApps.getShortcuts(query, userHandle)
+                // Check if our shortcut still exists
+                if (shortcuts?.any { it.id == shortcutId } == true) {
+                    textView.text = appName
+                    return true
+                }
+                textView.text = ""
+                return false
+            } catch (e: Exception) {
+                e.printStackTrace()
+                textView.text = ""
+                return false
+            }
+        }
+
+        // Regular app check
         if (isPackageInstalled(requireContext(), packageName, userString)) {
             textView.text = appName
             return true
@@ -391,49 +436,111 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
         binding.homeApp8.visibility = View.GONE
     }
 
-    private fun homeAppClicked(location: Int) {
-        if (prefs.getAppName(location).isEmpty()) showLongPressToast()
-        else launchApp(
-            prefs.getAppName(location),
-            prefs.getAppPackage(location),
-            prefs.getAppActivityClassName(location),
-            prefs.getAppUser(location)
-        )
+    private fun launchAppOrShortcut(
+        appName: String,
+        packageName: String,
+        activityClassName: String?,
+        shortcutId: String?,
+        isShortcut: Boolean,
+        userString: String,
+        fallback: (() -> Unit)? = null,
+    ) {
+        if (appName.isEmpty()) {
+            showLongPressToast()
+            return
+        }
+        if (isShortcut && !shortcutId.isNullOrEmpty()) {
+            launchShortcut(
+                packageName = packageName,
+                shortcutId = shortcutId,
+                shortcutLabel = appName,
+                userString = userString
+            )
+        } else if (packageName.isNotEmpty()) {
+            launchApp(
+                appName = appName,
+                packageName = packageName,
+                activityClassName = activityClassName,
+                userString = userString
+            )
+        } else {
+            fallback?.invoke()
+        }
     }
 
-    private fun launchApp(appName: String, packageName: String, activityClassName: String?, userString: String) {
+    private fun launchShortcut(shortcutId: String, packageName: String, shortcutLabel: String, userString: String) {
         viewModel.selectedApp(
-            AppModel(
-                appName,
-                null,
-                packageName,
-                activityClassName,
-                false,
-                getUserHandleFromString(requireContext(), userString)
+            AppModel.PinnedShortcut(
+                shortcutId = shortcutId,
+                appLabel = shortcutLabel,
+                user = getUserHandleFromString(requireContext(), userString),
+                key = null,
+                appPackage = packageName,
+                isNew = false,
             ),
             Constants.FLAG_LAUNCH_APP
         )
     }
 
-    private fun startVoiceRecognition() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        try {
-            voiceSearchLauncher.launch(intent)
-        } catch (e: Exception) {
-            requireContext().showToast(getString(R.string.app_not_found))
-        }
+    private fun launchApp(appName: String, packageName: String, activityClassName: String?, userString: String) {
+        viewModel.selectedApp(
+            AppModel.App(
+                appLabel = appName,
+                key = null,
+                appPackage = packageName,
+                activityClassName = activityClassName,
+                isNew = false,
+                user = getUserHandleFromString(requireContext(), userString)
+            ),
+            Constants.FLAG_LAUNCH_APP
+        )
     }
 
-    private fun showAppList(flag: Int, rename: Boolean = false, includeHiddenApps: Boolean = false, searchQuery: String = "") {
+    private fun homeAppClicked(location: Int) {
+        launchAppOrShortcut(
+            appName = prefs.getAppName(location),
+            packageName = prefs.getAppPackage(location),
+            activityClassName = prefs.getAppActivityClassName(location),
+            shortcutId = prefs.getShortcutId(location),
+            isShortcut = prefs.getIsShortcut(location),
+            userString = prefs.getAppUser(location)
+        )
+    }
+
+    private fun openSwipeRightApp() {
+        if (!prefs.swipeRightEnabled) return
+        launchAppOrShortcut(
+            appName = prefs.appNameSwipeRight,
+            packageName = prefs.appPackageSwipeRight,
+            activityClassName = prefs.appActivityClassNameRight,
+            shortcutId = prefs.shortcutIdSwipeRight,
+            isShortcut = prefs.isShortcutSwipeRight,
+            userString = prefs.appUserSwipeRight,
+            fallback = { openDialerApp(requireContext()) }
+        )
+    }
+
+    private fun openSwipeLeftApp() {
+        if (!prefs.swipeLeftEnabled) return
+        launchAppOrShortcut(
+            appName = prefs.appNameSwipeLeft,
+            packageName = prefs.appPackageSwipeLeft,
+            activityClassName = prefs.appActivityClassNameSwipeLeft,
+            shortcutId = prefs.shortcutIdSwipeLeft,
+            isShortcut = prefs.isShortcutSwipeLeft,
+            userString = prefs.appUserSwipeLeft,
+            fallback = { openCameraApp(requireContext()) }
+        )
+    }
+
+    private fun showAppList(flag: Int, rename: Boolean = false, includeHiddenApps: Boolean = false) {
         viewModel.getAppList(includeHiddenApps)
         try {
             findNavController().navigate(
                 R.id.action_mainFragment_to_appListFragment,
                 bundleOf(
                     Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename,
-                    Constants.Key.SEARCH_QUERY to searchQuery
+                    Constants.Key.RENAME to rename
                 )
             )
         } catch (e: Exception) {
@@ -441,43 +548,11 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
                 R.id.appListFragment,
                 bundleOf(
                     Constants.Key.FLAG to flag,
-                    Constants.Key.RENAME to rename,
-                    Constants.Key.SEARCH_QUERY to searchQuery
+                    Constants.Key.RENAME to rename
                 )
             )
             e.printStackTrace()
         }
-    }
-
-    fun onSwipeDown() {
-        when (prefs.swipeDownAction) {
-            Constants.SwipeDownAction.SEARCH -> openSearch(requireContext())
-            else -> expandNotificationDrawer(requireContext())
-        }
-    }
-
-    private fun openSwipeRightApp() {
-        if (!prefs.swipeRightEnabled) return
-        if (prefs.appPackageSwipeRight.isNotEmpty())
-            launchApp(
-                prefs.appNameSwipeRight,
-                prefs.appPackageSwipeRight,
-                prefs.appActivityClassNameRight,
-                prefs.appUserSwipeRight
-            )
-        else openDialerApp(requireContext())
-    }
-
-    private fun openSwipeLeftApp() {
-        if (!prefs.swipeLeftEnabled) return
-        if (prefs.appPackageSwipeLeft.isNotEmpty())
-            launchApp(
-                prefs.appNameSwipeLeft,
-                prefs.appPackageSwipeLeft,
-                prefs.appActivityClassNameSwipeLeft,
-                prefs.appUserSwipeLeft
-            )
-        else openCameraApp(requireContext())
     }
 
     private fun lockPhone() {
@@ -527,6 +602,15 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
     }
 
     private fun openScreenTimeDigitalWellbeing() {
+        if (prefs.screenTimeAppPackage.isNotBlank()) {
+            launchApp(
+                "Screen Time",
+                prefs.screenTimeAppPackage,
+                prefs.screenTimeAppClassName,
+                prefs.screenTimeAppUser
+            )
+            return
+        }
         val intent = Intent()
         try {
             intent.setClassName(
@@ -554,10 +638,6 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
     private fun textOnLongClick(view: View) = onLongClick(view)
 
-    fun onSwipeUp() {
-        showAppList(Constants.FLAG_LAUNCH_APP)
-    }
-
     private fun getSwipeGestureListener(context: Context): View.OnTouchListener {
         return object : OnSwipeTouchListener(context) {
             override fun onSwipeLeft() {
@@ -572,12 +652,12 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
             override fun onSwipeUp() {
                 super.onSwipeUp()
-                this@HomeFragment.onSwipeUp()
+                showAppList(Constants.FLAG_LAUNCH_APP)
             }
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                this@HomeFragment.onSwipeDown()
+                expandNotificationDrawer(requireContext())
             }
 
             override fun onLongClick() {
@@ -592,9 +672,10 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
             override fun onDoubleClick() {
                 super.onDoubleClick()
+                if (!prefs.lockModeOn) return
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                     binding.lock.performClick()
-                else if (prefs.lockModeOn)
+                else
                     lockPhone()
             }
 
@@ -619,12 +700,12 @@ class HomeFragment : Fragment(), View.OnClickListener, View.OnLongClickListener 
 
             override fun onSwipeUp() {
                 super.onSwipeUp()
-                this@HomeFragment.onSwipeUp()
+                showAppList(Constants.FLAG_LAUNCH_APP)
             }
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                this@HomeFragment.onSwipeDown()
+                expandNotificationDrawer(requireContext())
             }
 
             override fun onLongClick(view: View) {
