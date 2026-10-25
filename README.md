@@ -2,6 +2,8 @@
 
 
 # Olauncher | Minimal AF Launcher
+
+[![Build](https://github.com/mexitalian/Intently/actions/workflows/build.yml/badge.svg)](https://github.com/mexitalian/Intently/actions/workflows/build.yml)
 AF stands for Ad-Free! :D
 
 [<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
