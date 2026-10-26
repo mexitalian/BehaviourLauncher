@@ -22,6 +22,7 @@ import app.olauncher.MainViewModel
 import app.olauncher.R
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
+import app.olauncher.data.FolderStore
 import app.olauncher.data.Prefs
 import app.olauncher.databinding.FragmentAppDrawerBinding
 import app.olauncher.helper.deletePinnedShortcut
@@ -39,6 +40,7 @@ import app.olauncher.helper.uninstall
 class AppDrawerFragment : BaseFragment() {
 
     private lateinit var prefs: Prefs
+    private lateinit var folderStore: FolderStore
     private lateinit var adapter: AppDrawerAdapter
     private lateinit var linearLayoutManager: LinearLayoutManager
     private var searchTextView: TextView? = null
@@ -47,6 +49,7 @@ class AppDrawerFragment : BaseFragment() {
     private var flag = Constants.FLAG_LAUNCH_APP
     private var canRename = false
     private var folderId: Long = 0L
+    private var initialQuery: String = ""
     private var currentAppList: List<AppModel>? = null
     private var currentPrivateSpaceApps: List<AppModel>? = null
     private var currentPrivateSpaceLocked: Boolean = true
@@ -68,10 +71,12 @@ class AppDrawerFragment : BaseFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         prefs = Prefs(requireContext())
+        folderStore = FolderStore(requireContext())
         arguments?.let {
             flag = it.getInt(Constants.Key.FLAG, Constants.FLAG_LAUNCH_APP)
             canRename = it.getBoolean(Constants.Key.RENAME, false)
             folderId = it.getLong(Constants.Key.FOLDER_ID, 0L)
+            initialQuery = it.getString(Constants.Key.INITIAL_QUERY) ?: ""
         }
 
         initViews()
@@ -88,6 +93,12 @@ class AppDrawerFragment : BaseFragment() {
             binding.search.queryHint = "Please select an app"
         else if (flag == Constants.FLAG_ADD_TO_FOLDER)
             binding.search.queryHint = getString(R.string.folder_select_app)
+        else if (flag == Constants.FLAG_RENAME_INTENTION) {
+            binding.search.queryHint = getString(R.string.intention_name)
+            binding.recyclerView.visibility = View.GONE
+            if (initialQuery.isNotEmpty())
+                binding.search.setQuery(initialQuery, false)
+        }
         try {
             searchTextView = binding.search.findViewById(R.id.search_src_text)
             searchTextView?.gravity = prefs.appLabelAlignment
@@ -99,6 +110,8 @@ class AppDrawerFragment : BaseFragment() {
     private fun initSearch() {
         binding.search.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
+                if (flag == Constants.FLAG_RENAME_INTENTION)
+                    return true
                 if (query?.startsWith("!") == true)
                     requireContext().openUrl(Constants.URL_DUCK_SEARCH + query.replace(" ", "%20"))
                 else if (adapter.itemCount == 0)
@@ -274,6 +287,8 @@ class AppDrawerFragment : BaseFragment() {
                     adapter.setAppList(it.toMutableList())
                 }
             }
+        } else if (flag == Constants.FLAG_RENAME_INTENTION) {
+            // intention rename: search bar only, no app list
         } else {
             viewModel.appList.observe(viewLifecycleOwner) {
                 currentAppList = it
@@ -329,6 +344,16 @@ class AppDrawerFragment : BaseFragment() {
                 Constants.FLAG_SET_HOME_APP_6 -> prefs.appName6 = name
                 Constants.FLAG_SET_HOME_APP_7 -> prefs.appName7 = name
                 Constants.FLAG_SET_HOME_APP_8 -> prefs.appName8 = name
+
+                Constants.FLAG_RENAME_INTENTION -> {
+                    if (folderId > 0) {
+                        folderStore.folders.firstOrNull { it.id == folderId }?.let {
+                            folderStore.update(it.copy(verb = name))
+                        }
+                    } else {
+                        folderStore.createFolder(name)
+                    }
+                }
             }
             findNavController().popBackStack()
         }

@@ -13,12 +13,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
@@ -507,6 +505,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         rename: Boolean = false,
         includeHiddenApps: Boolean = false,
         folderId: Long = 0L,
+        initialQuery: String? = null,
     ) {
         viewModel.getAppList(includeHiddenApps)
         val args = bundleOf(
@@ -515,6 +514,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         )
         if (folderId > 0)
             args.putLong(Constants.Key.FOLDER_ID, folderId)
+        if (!initialQuery.isNullOrEmpty())
+            args.putString(Constants.Key.INITIAL_QUERY, initialQuery)
         try {
             findNavController().navigate(R.id.action_mainFragment_to_appListFragment, args)
         } catch (e: Exception) {
@@ -625,7 +626,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                expandNotificationDrawer(requireContext())
+                if (expandedFolderId != null)
+                    exitIntentionView()
+                else
+                    expandNotificationDrawer(requireContext())
             }
 
             override fun onLongClick() {
@@ -674,7 +678,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
             override fun onSwipeDown() {
                 super.onSwipeDown()
-                expandNotificationDrawer(requireContext())
+                if (!onFolderRowSwipeDown(view))
+                    expandNotificationDrawer(requireContext())
             }
 
             override fun onLongClick(view: View) {
@@ -790,48 +795,44 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         populateFolders()
     }
 
-    /** Swipe up on an intention: enter its folder view; swipe again to exit. */
+    /** Swipe up on an intention opens its folder view. */
     private fun onFolderRowSwipeUp(view: View): Boolean {
         val tag = view.tag?.toString() ?: return false
         if (!tag.startsWith(FOLDER_TAG)) return false
         val id = tag.removePrefix(FOLDER_TAG).toLongOrNull() ?: return false
-        if (expandedFolderId == id)
-            exitIntentionView()
-        else
+        if (expandedFolderId != id)
             enterIntentionView(id)
         return true
     }
 
-    private fun renameIntention(folderId: Long) {
-        val current = folderStore.folders.firstOrNull { it.id == folderId } ?: return
-        showTextDialog(getString(R.string.intention_name), current.verb) { name ->
-            if (name.isNotEmpty()) {
-                folderStore.update(current.copy(verb = name))
-                populateFolders()
-            }
+    /** Swipe down anywhere in the folder view exits it. */
+    private fun onFolderRowSwipeDown(view: View): Boolean {
+        val tag = view.tag?.toString() ?: return false
+        if (expandedFolderId == null) return false
+        if (tag.startsWith(FOLDER_TAG) || tag.startsWith(FAPP_TAG)) {
+            exitIntentionView()
+            return true
         }
+        return false
+    }
+
+    private fun renameIntention(folderId: Long) {
+        val current = folderStore.folders.firstOrNull { it.id == folderId }
+        showAppList(
+            Constants.FLAG_RENAME_INTENTION,
+            rename = true,
+            folderId = folderId,
+            initialQuery = current?.verb ?: ""
+        )
     }
 
     private fun createIntention() {
-        showTextDialog(getString(R.string.intention_name), "") { name ->
-            if (name.isNotEmpty()) {
-                folderStore.createFolder(name)
-                populateFolders()
-            }
-        }
-    }
-
-    private fun showTextDialog(title: String, initial: String, onOk: (String) -> Unit) {
-        val input = EditText(requireContext())
-        input.setText(initial)
-        input.setSelection(initial.length)
-        AlertDialog.Builder(requireContext())
-            .setTitle(title)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ -> onOk(input.text.toString().trim()) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-        input.requestFocus()
+        showAppList(
+            Constants.FLAG_RENAME_INTENTION,
+            rename = true,
+            folderId = 0L,
+            initialQuery = ""
+        )
     }
 
     private fun launchFolderApp(packageName: String) {
