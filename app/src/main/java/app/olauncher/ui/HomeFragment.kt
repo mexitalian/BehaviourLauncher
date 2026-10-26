@@ -31,6 +31,7 @@ import app.olauncher.R
 import app.olauncher.data.AppModel
 import app.olauncher.data.Constants
 import app.olauncher.data.FolderStore
+import app.olauncher.data.Member
 import app.olauncher.data.Prefs
 import app.olauncher.data.VerbFolder
 import app.olauncher.databinding.FragmentHomeBinding
@@ -45,7 +46,6 @@ import app.olauncher.helper.openCalendar
 import app.olauncher.helper.openCameraApp
 import app.olauncher.helper.openDialerApp
 import app.olauncher.helper.setPlainWallpaperByTheme
-import app.olauncher.helper.showPopupMenu
 import app.olauncher.helper.showToast
 import app.olauncher.listener.OnSwipeTouchListener
 import app.olauncher.listener.ViewSwipeTouchListener
@@ -87,7 +87,6 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     override fun onResume() {
         super.onResume()
-        folderStore.seedDefaultsIfEmpty()
         populateHomeScreen(false)
         viewModel.isOlauncherDefault()
         if (prefs.showStatusBar) showStatusBar()
@@ -114,6 +113,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     }
 
                     tag.startsWith(FOLDER_TAG) -> folderClicked(tag.removePrefix(FOLDER_TAG))
+
+                    tag == EMPTY_TAG -> emptyIntentionClicked()
 
                     else -> {
                         try { // Launch app
@@ -187,12 +188,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 val tag = view.tag?.toString() ?: ""
                 val folderId =
                     if (tag.startsWith(FOLDER_TAG)) tag.removePrefix(FOLDER_TAG).toLongOrNull() else null
-                if (folderId != null) {
-                    showFolderMenu(view, folderId)
-                } else if (tag.startsWith(FAPP_TAG)) {
-                    val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
-                    if (parts.size == 2)
-                        showFolderAppMenu(view, parts[0].toLongOrNull() ?: 0L, parts[1])
+                when {
+                    folderId != null -> renameIntention(folderId)
+                    tag == EMPTY_TAG -> createIntention()
+                    else -> {} // member-app long-press flow lands with the folder view rework
                 }
             }
         }
@@ -701,22 +700,38 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         val rows = mutableListOf<HomeRow>()
         if (expanded != null) {
             rows.add(HomeRow.FolderRow(expanded))
-            expanded.apps.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
+            expanded.members.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
         } else {
-            folders.take(views.size).forEach { rows.add(HomeRow.FolderRow(it)) }
+            val slots = prefs.homeAppsNum.coerceIn(0, views.size)
+            folders.take(slots).forEach { rows.add(HomeRow.FolderRow(it)) }
+            repeat(slots - rows.size) { rows.add(HomeRow.EmptyRow) }
         }
 
         views.forEachIndexed { index, view ->
             when (val row = rows.getOrNull(index)) {
                 is HomeRow.FolderRow -> {
-                    view.text = row.folder.verb
+                    if (row.folder.verb.isBlank()) {
+                        view.text = ""
+                        view.hint = getString(R.string.intent_placeholder)
+                    } else {
+                        view.text = row.folder.verb
+                        view.hint = ""
+                    }
                     view.tag = FOLDER_TAG + row.folder.id
                     view.visibility = View.VISIBLE
                 }
 
                 is HomeRow.AppRow -> {
-                    view.text = appLabelFor(row.packageName)
-                    view.tag = FAPP_TAG + row.folderId + ":" + row.packageName
+                    view.text = row.member.label ?: appLabelFor(row.member.packageName)
+                    view.hint = ""
+                    view.tag = FAPP_TAG + row.folderId + ":" + row.member.packageName
+                    view.visibility = View.VISIBLE
+                }
+
+                is HomeRow.EmptyRow -> {
+                    view.text = ""
+                    view.hint = getString(R.string.intent_placeholder)
+                    view.tag = EMPTY_TAG
                     view.visibility = View.VISIBLE
                 }
 
@@ -740,76 +755,67 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private fun folderClicked(folderId: String) {
         val folder = folderStore.folders.firstOrNull { it.id.toString() == folderId } ?: return
         if (expandedFolderId == folder.id) {
-            expandedFolderId = null
-            populateFolders()
+            exitIntentionView()
             return
         }
-        val app = folder.tapApp
-        if (app == null) {
-            requireContext().showToast(getString(R.string.folder_add_apps_hint))
+        if (folder.members.isEmpty()) {
+            enterIntentionView(folder.id)
             return
         }
-        launchFolderApp(app)
+        launchFolderApp(folder.tapApp ?: return)
+    }
+
+    private fun emptyIntentionClicked() {
+        val folder = folderStore.createFolder("")
+        enterIntentionView(folder.id)
     }
 
     private fun folderAppClicked(folderId: Long, packageName: String) {
         if (folderId <= 0) return
-        folderStore.setDefaultApp(folderId, packageName)
         launchFolderApp(packageName)
     }
 
-    /** Expand/collapse on swipe-up when the swiped row shows a folder. */
+    /** Enter the folder view; toast when there is no primary app yet. */
+    private fun enterIntentionView(folderId: Long) {
+        expandedFolderId = folderId
+        val folder = folderStore.folders.firstOrNull { it.id == folderId }
+        if (folder == null || folder.members.isEmpty())
+            requireContext().showToast(getString(R.string.add_primary_app_hint))
+        populateFolders()
+    }
+
+    private fun exitIntentionView() {
+        expandedFolderId = null
+        folderStore.cleanupEmptyUnnamed()
+        populateFolders()
+    }
+
+    /** Swipe up on an intention: enter its folder view; swipe again to exit. */
     private fun onFolderRowSwipeUp(view: View): Boolean {
         val tag = view.tag?.toString() ?: return false
         if (!tag.startsWith(FOLDER_TAG)) return false
         val id = tag.removePrefix(FOLDER_TAG).toLongOrNull() ?: return false
-        expandedFolderId = if (expandedFolderId == id) null else id
-        populateFolders()
+        if (expandedFolderId == id)
+            exitIntentionView()
+        else
+            enterIntentionView(id)
         return true
     }
 
-    private fun showFolderMenu(view: View, folderId: Long) {
-        view.showPopupMenu(configure = { menu ->
-            menu.add(0, MENU_ADD_APPS, 0, getString(R.string.folder_menu_add_apps))
-            menu.add(0, MENU_RENAME, 1, getString(R.string.folder_menu_rename))
-            menu.add(0, MENU_DELETE, 2, getString(R.string.folder_menu_delete))
-            menu.add(0, MENU_NEW_FOLDER, 3, getString(R.string.folder_menu_new))
-        }) { item ->
-            when (item.itemId) {
-                MENU_ADD_APPS -> showAppList(Constants.FLAG_ADD_TO_FOLDER, folderId = folderId)
-
-                MENU_RENAME -> {
-                    val current = folderStore.folders.firstOrNull { it.id == folderId }
-                    showTextDialog(getString(R.string.folder_menu_rename), current?.verb ?: "") { name ->
-                        if (name.isNotEmpty()) {
-                            current?.let { folderStore.update(it.copy(verb = name)) }
-                            populateFolders()
-                        }
-                    }
-                }
-
-                MENU_DELETE -> {
-                    folderStore.delete(folderId)
-                    expandedFolderId = null
-                    populateFolders()
-                }
-
-                MENU_NEW_FOLDER -> showTextDialog(getString(R.string.folder_menu_new), "") { name ->
-                    if (name.isNotEmpty()) {
-                        folderStore.createFolder(name)
-                        populateFolders()
-                    }
-                }
+    private fun renameIntention(folderId: Long) {
+        val current = folderStore.folders.firstOrNull { it.id == folderId } ?: return
+        showTextDialog(getString(R.string.intention_name), current.verb) { name ->
+            if (name.isNotEmpty()) {
+                folderStore.update(current.copy(verb = name))
+                populateFolders()
             }
         }
     }
 
-    private fun showFolderAppMenu(view: View, folderId: Long, packageName: String) {
-        view.showPopupMenu(configure = { menu ->
-            menu.add(0, MENU_REMOVE_APP, 0, getString(R.string.folder_menu_remove_app))
-        }) { item ->
-            if (item.itemId == MENU_REMOVE_APP) {
-                folderStore.removeApp(folderId, packageName)
+    private fun createIntention() {
+        showTextDialog(getString(R.string.intention_name), "") { name ->
+            if (name.isNotEmpty()) {
+                folderStore.createFolder(name)
                 populateFolders()
             }
         }
@@ -845,17 +851,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private sealed interface HomeRow {
         data class FolderRow(val folder: VerbFolder) : HomeRow
-        data class AppRow(val folderId: Long, val packageName: String) : HomeRow
+        data class AppRow(val folderId: Long, val member: Member) : HomeRow
+        data object EmptyRow : HomeRow
     }
 
     companion object {
         private const val FOLDER_TAG = "folder:"
         private const val FAPP_TAG = "fapp:"
-        private const val MENU_ADD_APPS = 21
-        private const val MENU_RENAME = 22
-        private const val MENU_DELETE = 23
-        private const val MENU_NEW_FOLDER = 24
-        private const val MENU_REMOVE_APP = 25
+        private const val EMPTY_TAG = "empty:"
     }
 
     override fun onDestroyView() {
