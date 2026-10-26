@@ -16,6 +16,7 @@ import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
@@ -83,6 +84,17 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         setHomeAlignment(prefs.homeAlignment)
         initSwipeTouchListener()
         initClickListeners()
+
+        // System back: leave the folder view; back never leaves the home screen
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (expandedFolderId != null)
+                        exitIntentionView()
+                }
+            }
+        )
     }
 
     override fun onResume() {
@@ -216,6 +228,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         viewModel.refreshHome.observe(viewLifecycleOwner) {
             populateHomeScreen(it)
+        }
+        // Home button / leaving the launcher: return to the home surface
+        viewModel.collapseFolderView.observe(viewLifecycleOwner) {
+            if (expandedFolderId != null)
+                exitIntentionView()
         }
         viewModel.isOlauncherDefault.observe(viewLifecycleOwner, Observer {
             if (it != true) {

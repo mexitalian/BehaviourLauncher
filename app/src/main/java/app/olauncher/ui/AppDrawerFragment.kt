@@ -353,6 +353,11 @@ class AppDrawerFragment : BaseFragment() {
                 Constants.FLAG_SET_HOME_APP_7 -> prefs.appName7 = name
                 Constants.FLAG_SET_HOME_APP_8 -> prefs.appName8 = name
 
+                Constants.FLAG_SET_FOLDER_APP -> {
+                    if (folderId > 0 && memberPackage.isNotEmpty())
+                        folderStore.renameMember(folderId, memberPackage, name)
+                }
+
                 Constants.FLAG_RENAME_INTENTION -> {
                     if (folderId > 0) {
                         folderStore.folders.firstOrNull { it.id == folderId }?.let {

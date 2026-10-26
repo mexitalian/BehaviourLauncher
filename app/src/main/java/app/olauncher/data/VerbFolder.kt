@@ -40,7 +40,9 @@ data class VerbFolder(
     fun withMemberReplaced(oldPackage: String, newPackage: String): VerbFolder {
         if (members.none { it.packageName == oldPackage }) return this
         val newMembers = members.map { member ->
-            if (member.packageName == oldPackage) member.copy(packageName = newPackage) else member
+            // A switched app starts fresh: drop the old member's custom label so
+            // the new app's real name shows instead of the previous app's name.
+            if (member.packageName == oldPackage) Member(newPackage) else member
         }
         val newDefault = if (defaultApp == oldPackage) newPackage else defaultApp
         return copy(members = newMembers, defaultApp = newDefault)

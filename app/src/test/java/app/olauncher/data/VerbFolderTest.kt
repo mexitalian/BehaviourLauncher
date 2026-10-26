@@ -93,14 +93,38 @@ class VerbFolderTest {
     }
 
     @Test
-    fun replaceMemberKeepsPositionLabelAndPrimary() {
+    fun replaceMemberDropsStaleLabelButKeepsPositionAndPrimary() {
         val folder = VerbFolder(
             1L, "Read",
-            listOf(Member("com.books", "Bedtime"), Member("com.news")), "com.news"
+            listOf(Member("com.books", "Bedtime"), Member("com.news", "Headlines")), "com.news"
         )
         val replaced = folder.withMemberReplaced("com.news", "com.papers")
-        assertEquals("Bedtime", replaced.members[0].label)
+        // the switched app starts fresh: no stale custom label
+        assertNull(replaced.members[1].label)
+        // position, sibling labels and primary are preserved
         assertEquals("com.papers", replaced.members[1].packageName)
+        assertEquals("Bedtime", replaced.members[0].label)
         assertEquals("com.papers", replaced.defaultApp)
+    }
+
+    @Test
+    fun replaceMemberRoundTripDoesNotResurrectStaleLabel() {
+        val folder = VerbFolder(
+            1L, "Read",
+            listOf(Member("com.news", "Headlines")), "com.news"
+        )
+        val replaced = folder.withMemberReplaced("com.news", "com.papers")
+        val parsed = VerbFolder.parse(replaced.serialized())!!
+        assertNull(parsed.members[0].label)
+        assertEquals("com.papers", parsed.members[0].packageName)
+        assertEquals("com.papers", parsed.defaultApp)
+    }
+
+    @Test
+    fun renameMemberPersistsThroughRoundTrip() {
+        val folder = VerbFolder(1L, "Read", listOf(Member("com.news")))
+        val renamed = folder.withMemberRenamed("com.news", "Headlines")
+        val parsed = VerbFolder.parse(renamed.serialized())!!
+        assertEquals("Headlines", parsed.members[0].label)
     }
 }

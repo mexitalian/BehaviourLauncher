@@ -65,6 +65,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Suppress backToHomeScreen during Private Space lock/unlock auth
     var isPrivateSpaceToggling = false
 
+    /** Collapse any open folder view and return to the home surface. */
+    val collapseFolderView = SingleLiveEvent<Unit?>()
+
     val showDialog = SingleLiveEvent<String>()
     val checkForMessages = SingleLiveEvent<Unit?>()
     val resetLauncherLiveData = SingleLiveEvent<Unit?>()
