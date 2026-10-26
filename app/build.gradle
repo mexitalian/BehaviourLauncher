@@ -24,17 +24,34 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Stable signing for CI builds: when INTENTLY_KEYSTORE_FILE is set (see
+    // .github/workflows/build.yml), all builds are signed with one persistent
+    // keystore so APKs can update over each other instead of forcing reinstalls.
+    def ciKeystore = System.getenv("INTENTLY_KEYSTORE_FILE")
+    signingConfigs {
+        if (ciKeystore != null) {
+            ci {
+                storeFile file(ciKeystore)
+                storePassword System.getenv("INTENTLY_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("INTENTLY_KEY_ALIAS")
+                keyPassword System.getenv("INTENTLY_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             debuggable false
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (ciKeystore != null) signingConfig signingConfigs.ci
         }
         debug {
             debuggable true
             minifyEnabled false
             applicationIdSuffix ".debug"
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (ciKeystore != null) signingConfig signingConfigs.ci
         }
     }
     buildFeatures {

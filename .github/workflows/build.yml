@@ -20,6 +20,18 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Restore signing keystore
+        env:
+          INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
+            printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored."
+          else
+            echo "No signing secret set; using default debug signing."
+          fi
+
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
@@ -48,6 +60,18 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore signing keystore
+        env:
+          INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
+            printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored."
+          else
+            echo "No signing secret set; using default debug signing."
+          fi
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -79,6 +103,18 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore signing keystore
+        env:
+          INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
+            printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored."
+          else
+            echo "No signing secret set; using default debug signing."
+          fi
 
       - name: Build release APK
         run: ./gradlew assembleRelease
