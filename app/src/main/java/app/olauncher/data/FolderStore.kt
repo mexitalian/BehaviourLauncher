@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 
 /**
- * SharedPreferences-backed store for the user's verb folders.
+ * SharedPreferences-backed store for the user's intentions.
  * Follows the same persistence pattern as [Prefs].
  */
 class FolderStore(context: Context) {
@@ -22,17 +22,6 @@ class FolderStore(context: Context) {
             val raw = prefs.getString(FOLDERS, null) ?: return emptyList()
             return raw.split("\n").mapNotNull { VerbFolder.parse(it) }
         }
-
-    fun seedDefaultsIfEmpty() {
-        if (prefs.contains(FOLDERS)) return
-        var seedId = 1L
-        val seeds = listOf("Read", "Listen", "Talk", "Navigate", "Watch")
-        val raw = seeds.joinToString("\n") { verb ->
-            VerbFolder(seedId++, verb, emptyList()).serialized()
-        }
-        prefs.edit { putString(FOLDERS, raw) }
-        nextId = seedId
-    }
 
     fun createFolder(verb: String): VerbFolder {
         val id = nextId
@@ -60,11 +49,14 @@ class FolderStore(context: Context) {
         save(reordered + unlisted)
     }
 
-    fun addApp(folderId: Long, packageName: String) =
-        mutate(folderId) { it.withAppAdded(packageName) }
+    fun addMember(folderId: Long, packageName: String, label: String? = null) =
+        mutate(folderId) { it.withMemberAdded(packageName, label) }
 
-    fun removeApp(folderId: Long, packageName: String) =
-        mutate(folderId) { it.withAppRemoved(packageName) }
+    fun removeMember(folderId: Long, packageName: String) =
+        mutate(folderId) { it.withMemberRemoved(packageName) }
+
+    fun renameMember(folderId: Long, packageName: String, label: String?) =
+        mutate(folderId) { it.withMemberRenamed(packageName, label) }
 
     fun setDefaultApp(folderId: Long, packageName: String) =
         mutate(folderId) { it.copy(defaultApp = packageName) }
@@ -72,12 +64,19 @@ class FolderStore(context: Context) {
     /** Drop references to apps that are no longer installed. */
     fun pruneApps(installedPackages: Set<String>) {
         val pruned = folders.map { folder ->
-            val kept = folder.apps.filter { installedPackages.contains(it) }
+            val kept = folder.members.filter { installedPackages.contains(it.packageName) }
             val keptDefault = folder.defaultApp?.takeIf { installedPackages.contains(it) }
-            if (kept == folder.apps && keptDefault == folder.defaultApp) folder
-            else folder.copy(apps = kept, defaultApp = keptDefault)
+            if (kept == folder.members && keptDefault == folder.defaultApp) folder
+            else folder.copy(members = kept, defaultApp = keptDefault)
         }
         if (pruned != folders) save(pruned)
+    }
+
+    /** Remove intentions that were entered but never given a name or an app. */
+    fun cleanupEmptyUnnamed() {
+        val empties = folders.filter { it.verb.isBlank() && it.members.isEmpty() }
+        if (empties.isNotEmpty())
+            save(folders.filterNot { it.verb.isBlank() && it.members.isEmpty() })
     }
 
     private fun mutate(folderId: Long, transform: (VerbFolder) -> VerbFolder) {

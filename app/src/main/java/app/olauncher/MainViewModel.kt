@@ -354,7 +354,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun addToFolder(appModel: AppModel, folderId: Long) {
         if (folderId <= 0 || appModel !is AppModel.App) return
-        folderStore.addApp(folderId, appModel.appPackage)
+        folderStore.addMember(folderId, appModel.appPackage, appModel.appLabel)
         refreshHome(false)
         appContext.showToast(appContext.getString(R.string.app_added_to_folder))
     }

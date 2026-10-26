@@ -182,4 +182,7 @@
     <string name="folder_menu_remove_app">Remove from folder</string>
     <string name="folder_select_app">Choose apps to add</string>
     <string name="app_added_to_folder">Added to folder</string>
+    <string name="intent_placeholder">Intent</string>
+    <string name="add_primary_app_hint">Add the primary app</string>
+    <string name="intention_name">Intention name</string>
 </resources>
