@@ -56,6 +56,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private lateinit var prefs: Prefs
     private lateinit var folderStore: FolderStore
     private var expandedFolderId: Long? = null
+    private var actionMenuVisible = false
+    private var confirmDeleteVisible = false
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -189,7 +191,17 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 when {
                     folderId != null -> renameIntention(folderId)
                     tag == EMPTY_TAG -> createIntention()
-                    else -> {} // member-app long-press flow lands with the folder view rework
+                    else -> if (tag.startsWith(FAPP_TAG)) {
+                        val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
+                        if (parts.size == 2)
+                            showAppList(
+                                Constants.FLAG_SET_FOLDER_APP,
+                                rename = true,
+                                includeHiddenApps = true,
+                                folderId = parts[0].toLongOrNull() ?: 0L,
+                                memberPackage = parts[1]
+                            )
+                    }
                 }
             }
         }
@@ -275,6 +287,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         binding.homeApp6.setOnLongClickListener(this)
         binding.homeApp7.setOnLongClickListener(this)
         binding.homeApp8.setOnLongClickListener(this)
+
+        binding.expandedFolderName.setOnTouchListener(object : OnSwipeTouchListener(requireContext()) {
+            override fun onClick() = exitIntentionView()
+            override fun onLongClick() = toggleFolderActions()
+            override fun onSwipeDown() = exitIntentionView()
+        })
+        binding.actionWord1.setOnClickListener { onFolderAction(1) }
+        binding.actionWord2.setOnClickListener { onFolderAction(2) }
+        binding.actionWord3.setOnClickListener { onFolderAction(3) }
     }
 
     private fun setHomeAlignment(horizontalGravity: Int = prefs.homeAlignment) {
@@ -344,6 +365,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             populateScreenTime()
 
         populateFolders()
+        populateExpandedHeader()
     }
 
     private fun setHomeAppText(
@@ -506,6 +528,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         includeHiddenApps: Boolean = false,
         folderId: Long = 0L,
         initialQuery: String? = null,
+        memberPackage: String? = null,
     ) {
         viewModel.getAppList(includeHiddenApps)
         val args = bundleOf(
@@ -516,6 +539,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             args.putLong(Constants.Key.FOLDER_ID, folderId)
         if (!initialQuery.isNullOrEmpty())
             args.putString(Constants.Key.INITIAL_QUERY, initialQuery)
+        if (!memberPackage.isNullOrEmpty())
+            args.putString(Constants.Key.MEMBER_PACKAGE, memberPackage)
         try {
             findNavController().navigate(R.id.action_mainFragment_to_appListFragment, args)
         } catch (e: Exception) {
@@ -704,7 +729,6 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         val rows = mutableListOf<HomeRow>()
         if (expanded != null) {
-            rows.add(HomeRow.FolderRow(expanded))
             expanded.members.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
         } else {
             val slots = prefs.homeAppsNum.coerceIn(0, views.size)
@@ -783,16 +807,24 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     /** Enter the folder view; toast when there is no primary app yet. */
     private fun enterIntentionView(folderId: Long) {
         expandedFolderId = folderId
+        actionMenuVisible = false
+        confirmDeleteVisible = false
         val folder = folderStore.folders.firstOrNull { it.id == folderId }
         if (folder == null || folder.members.isEmpty())
             requireContext().showToast(getString(R.string.add_primary_app_hint))
+        populateDateTime()
         populateFolders()
+        populateExpandedHeader()
     }
 
     private fun exitIntentionView() {
         expandedFolderId = null
+        actionMenuVisible = false
+        confirmDeleteVisible = false
         folderStore.cleanupEmptyUnnamed()
+        populateDateTime()
         populateFolders()
+        populateExpandedHeader()
     }
 
     /** Swipe up on an intention opens its folder view. */
@@ -833,6 +865,77 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             folderId = 0L,
             initialQuery = ""
         )
+    }
+
+    /** The folder view header: intention name in the clock position, inline actions beneath. */
+    private fun populateExpandedHeader() {
+        val expanded = expandedFolderId?.let { id -> folderStore.folders.firstOrNull { it.id == id } }
+        if (expanded == null) {
+            actionMenuVisible = false
+            confirmDeleteVisible = false
+            binding.expandedFolderName.isVisible = false
+            binding.folderActionLine.isVisible = false
+            return
+        }
+
+        binding.dateTimeLayout.isVisible = true
+        binding.clock.isVisible = false
+        binding.date.isVisible = false
+
+        if (expanded.verb.isBlank()) {
+            binding.expandedFolderName.text = ""
+            binding.expandedFolderName.hint = getString(R.string.intent_placeholder)
+        } else {
+            binding.expandedFolderName.text = expanded.verb
+            binding.expandedFolderName.hint = ""
+        }
+        binding.expandedFolderName.isVisible = true
+
+        binding.folderActionLine.isVisible = actionMenuVisible
+        if (confirmDeleteVisible) {
+            binding.actionWord1.text = getString(R.string.action_yes_delete)
+            binding.actionWord2.text = getString(R.string.action_no_cancel)
+            binding.actionWord3.isVisible = false
+            binding.actionDivider2.isVisible = false
+        } else {
+            binding.actionWord1.text = getString(R.string.action_add_app)
+            binding.actionWord2.text = getString(R.string.action_rename)
+            binding.actionWord3.text = getString(R.string.action_delete)
+            binding.actionWord3.isVisible = true
+            binding.actionDivider2.isVisible = true
+        }
+    }
+
+    private fun toggleFolderActions() {
+        if (expandedFolderId == null) return
+        confirmDeleteVisible = false
+        actionMenuVisible = !actionMenuVisible
+        populateExpandedHeader()
+    }
+
+    private fun onFolderAction(word: Int) {
+        val folderId = expandedFolderId ?: return
+        if (confirmDeleteVisible) {
+            when (word) {
+                1 -> { // yes, delete
+                    folderStore.delete(folderId)
+                    exitIntentionView()
+                }
+                2 -> { // no, cancel
+                    confirmDeleteVisible = false
+                    populateExpandedHeader()
+                }
+            }
+            return
+        }
+        when (word) {
+            1 -> showAppList(Constants.FLAG_ADD_TO_FOLDER, folderId = folderId)
+            2 -> renameIntention(folderId)
+            3 -> {
+                confirmDeleteVisible = true
+                populateExpandedHeader()
+            }
+        }
     }
 
     private fun launchFolderApp(packageName: String) {

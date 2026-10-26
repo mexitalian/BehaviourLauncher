@@ -91,4 +91,16 @@ class VerbFolderTest {
         val cleared = renamed.withMemberRenamed("com.news", null)
         assertNull(cleared.members[1].label)
     }
+
+    @Test
+    fun replaceMemberKeepsPositionLabelAndPrimary() {
+        val folder = VerbFolder(
+            1L, "Read",
+            listOf(Member("com.books", "Bedtime"), Member("com.news")), "com.news"
+        )
+        val replaced = folder.withMemberReplaced("com.news", "com.papers")
+        assertEquals("Bedtime", replaced.members[0].label)
+        assertEquals("com.papers", replaced.members[1].packageName)
+        assertEquals("com.papers", replaced.defaultApp)
+    }
 }

@@ -7,6 +7,7 @@ object Constants {
         const val RENAME = "rename"
         const val FOLDER_ID = "folderId"
         const val INITIAL_QUERY = "initialQuery"
+        const val MEMBER_PACKAGE = "memberPackage"
     }
 
     object Dialog {
@@ -81,6 +82,7 @@ object Constants {
     const val FLAG_SET_SCREEN_TIME_APP = 15
     const val FLAG_ADD_TO_FOLDER = 16
     const val FLAG_RENAME_INTENTION = 17
+    const val FLAG_SET_FOLDER_APP = 18
 
     const val REQUEST_CODE_ENABLE_ADMIN = 666
     const val REQUEST_CODE_LAUNCHER_SELECTOR = 678

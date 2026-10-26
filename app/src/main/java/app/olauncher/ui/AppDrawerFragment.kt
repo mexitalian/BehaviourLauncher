@@ -50,6 +50,7 @@ class AppDrawerFragment : BaseFragment() {
     private var canRename = false
     private var folderId: Long = 0L
     private var initialQuery: String = ""
+    private var memberPackage: String = ""
     private var currentAppList: List<AppModel>? = null
     private var currentPrivateSpaceApps: List<AppModel>? = null
     private var currentPrivateSpaceLocked: Boolean = true
@@ -77,6 +78,7 @@ class AppDrawerFragment : BaseFragment() {
             canRename = it.getBoolean(Constants.Key.RENAME, false)
             folderId = it.getLong(Constants.Key.FOLDER_ID, 0L)
             initialQuery = it.getString(Constants.Key.INITIAL_QUERY) ?: ""
+            memberPackage = it.getString(Constants.Key.MEMBER_PACKAGE) ?: ""
         }
 
         initViews()
@@ -91,7 +93,7 @@ class AppDrawerFragment : BaseFragment() {
             binding.search.queryHint = getString(R.string.hidden_apps)
         else if (flag in Constants.FLAG_SET_HOME_APP_1..Constants.FLAG_SET_CALENDAR_APP)
             binding.search.queryHint = "Please select an app"
-        else if (flag == Constants.FLAG_ADD_TO_FOLDER)
+        else if (flag == Constants.FLAG_ADD_TO_FOLDER || flag == Constants.FLAG_SET_FOLDER_APP)
             binding.search.queryHint = getString(R.string.folder_select_app)
         else if (flag == Constants.FLAG_RENAME_INTENTION) {
             binding.search.queryHint = getString(R.string.intention_name)
@@ -168,7 +170,7 @@ class AppDrawerFragment : BaseFragment() {
             flag,
             prefs.appLabelAlignment,
             appClickListener = { appModel ->
-                viewModel.selectedApp(appModel, flag, folderId)
+                viewModel.selectedApp(appModel, flag, folderId, memberPackage)
                 if (flag == Constants.FLAG_LAUNCH_APP || flag == Constants.FLAG_HIDDEN_APPS)
                     findNavController().popBackStack(R.id.mainFragment, false)
                 else
@@ -241,7 +243,11 @@ class AppDrawerFragment : BaseFragment() {
                     is AppModel.App -> appModel.appPackage
                     else -> return@AppDrawerAdapter
                 }
-                prefs.setAppRenameLabel(identifier, renameLabel)
+                if (flag == Constants.FLAG_SET_FOLDER_APP && memberPackage.isNotEmpty() && folderId > 0) {
+                    folderStore.renameMember(folderId, memberPackage, renameLabel)
+                } else {
+                    prefs.setAppRenameLabel(identifier, renameLabel)
+                }
                 viewModel.getAppList()
             },
             privateSpaceToggleListener = {

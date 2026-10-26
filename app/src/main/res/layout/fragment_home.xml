@@ -54,6 +54,70 @@
             android:paddingHorizontal="3dp"
             android:textSize="@dimen/date_size"
             tools:text="Thu, 30 Dec" />
+        <TextView
+            android:id="@+id/expandedFolderName"
+            style="@style/TextDefault"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-light"
+            android:paddingHorizontal="3dp"
+            android:textSize="@dimen/time_size"
+            android:visibility="gone"
+            tools:text="Read"
+            tools:visibility="visible" />
+
+        <LinearLayout
+            android:id="@+id/folderActionLine"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="3dp"
+            android:paddingTop="8dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:id="@+id/actionWord1"
+                style="@style/TextSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/date_size"
+                tools:text="add app" />
+
+            <TextView
+                android:id="@+id/actionDivider1"
+                style="@style/TextSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="8dp"
+                android:text="·"
+                android:textSize="@dimen/date_size" />
+
+            <TextView
+                android:id="@+id/actionWord2"
+                style="@style/TextSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/date_size"
+                tools:text="rename" />
+
+            <TextView
+                android:id="@+id/actionDivider2"
+                style="@style/TextSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="8dp"
+                android:text="·"
+                android:textSize="@dimen/date_size" />
+
+            <TextView
+                android:id="@+id/actionWord3"
+                style="@style/TextSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/date_size"
+                tools:text="delete" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Screen time-->

@@ -37,6 +37,15 @@ data class VerbFolder(
         return copy(members = newMembers, defaultApp = newDefault)
     }
 
+    fun withMemberReplaced(oldPackage: String, newPackage: String): VerbFolder {
+        if (members.none { it.packageName == oldPackage }) return this
+        val newMembers = members.map { member ->
+            if (member.packageName == oldPackage) member.copy(packageName = newPackage) else member
+        }
+        val newDefault = if (defaultApp == oldPackage) newPackage else defaultApp
+        return copy(members = newMembers, defaultApp = newDefault)
+    }
+
     fun withMemberRenamed(packageName: String, label: String?): VerbFolder {
         val newMembers = members.map { member ->
             if (member.packageName == packageName)

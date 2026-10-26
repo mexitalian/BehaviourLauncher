@@ -71,7 +71,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Home button for recents feature disabled
     // val showRecentApps = SingleLiveEvent<Unit?>()
 
-    fun selectedApp(appModel: AppModel, flag: Int, folderId: Long = 0L) {
+    fun selectedApp(appModel: AppModel, flag: Int, folderId: Long = 0L, memberPackage: String = "") {
         if (appModel is AppModel.PrivateSpaceHeader) return
         when (flag) {
             Constants.FLAG_LAUNCH_APP -> {
@@ -106,6 +106,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Constants.FLAG_SET_SCREEN_TIME_APP -> saveScreenTimeApp(appModel)
 
             Constants.FLAG_ADD_TO_FOLDER -> addToFolder(appModel, folderId)
+
+            Constants.FLAG_SET_FOLDER_APP -> setFolderApp(appModel, folderId, memberPackage)
         }
     }
 
@@ -357,6 +359,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         folderStore.addMember(folderId, appModel.appPackage, appModel.appLabel)
         refreshHome(false)
         appContext.showToast(appContext.getString(R.string.app_added_to_folder))
+    }
+
+    private fun setFolderApp(appModel: AppModel, folderId: Long, oldPackage: String) {
+        if (folderId <= 0 || oldPackage.isEmpty() || appModel !is AppModel.App) return
+        folderStore.replaceMember(folderId, oldPackage, appModel.appPackage)
+        refreshHome(false)
     }
 
     fun firstOpen(value: Boolean) {

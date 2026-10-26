@@ -55,6 +55,9 @@ class FolderStore(context: Context) {
     fun removeMember(folderId: Long, packageName: String) =
         mutate(folderId) { it.withMemberRemoved(packageName) }
 
+    fun replaceMember(folderId: Long, oldPackage: String, newPackage: String) =
+        mutate(folderId) { it.withMemberReplaced(oldPackage, newPackage) }
+
     fun renameMember(folderId: Long, packageName: String, label: String?) =
         mutate(folderId) { it.withMemberRenamed(packageName, label) }
 
