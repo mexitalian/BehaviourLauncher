@@ -23,14 +23,6 @@
             android:orientation="vertical"
             android:paddingVertical="64dp">
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="24dp"
-                android:layout_marginBottom="4dp"
-                android:alpha="0.25"
-                android:background="?attr/primaryColor" />
-
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -414,6 +406,14 @@
                 </FrameLayout>
 
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:alpha="0.25"
+                android:background="?attr/primaryColor" />
 
             <LinearLayout
                 android:layout_width="match_parent"
