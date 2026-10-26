@@ -23,11 +23,21 @@ jobs:
       - name: Restore signing keystore
         env:
           INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+          INTENTLY_KEYSTORE_PASSWORD: ${{ secrets.INTENTLY_KEYSTORE_PASSWORD }}
+          INTENTLY_KEY_ALIAS: ${{ secrets.INTENTLY_KEY_ALIAS }}
+          INTENTLY_KEY_PASSWORD: ${{ secrets.INTENTLY_KEY_PASSWORD }}
         run: |
           if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
             printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            if ! keytool -list -keystore "$RUNNER_TEMP/intently.keystore" -storepass "$INTENTLY_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "Keystore decoded but store password check failed."
+              exit 1
+            fi
             echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
-            echo "Stable signing keystore restored."
+            echo "INTENTLY_KEYSTORE_PASSWORD=$INTENTLY_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_ALIAS=$INTENTLY_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_PASSWORD=$INTENTLY_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored and verified."
           else
             echo "No signing secret set; using default debug signing."
           fi
@@ -64,11 +74,21 @@ jobs:
       - name: Restore signing keystore
         env:
           INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+          INTENTLY_KEYSTORE_PASSWORD: ${{ secrets.INTENTLY_KEYSTORE_PASSWORD }}
+          INTENTLY_KEY_ALIAS: ${{ secrets.INTENTLY_KEY_ALIAS }}
+          INTENTLY_KEY_PASSWORD: ${{ secrets.INTENTLY_KEY_PASSWORD }}
         run: |
           if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
             printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            if ! keytool -list -keystore "$RUNNER_TEMP/intently.keystore" -storepass "$INTENTLY_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "Keystore decoded but store password check failed."
+              exit 1
+            fi
             echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
-            echo "Stable signing keystore restored."
+            echo "INTENTLY_KEYSTORE_PASSWORD=$INTENTLY_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_ALIAS=$INTENTLY_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_PASSWORD=$INTENTLY_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored and verified."
           else
             echo "No signing secret set; using default debug signing."
           fi
@@ -107,11 +127,21 @@ jobs:
       - name: Restore signing keystore
         env:
           INTENTLY_KEYSTORE_BASE64: ${{ secrets.INTENTLY_KEYSTORE_BASE64 }}
+          INTENTLY_KEYSTORE_PASSWORD: ${{ secrets.INTENTLY_KEYSTORE_PASSWORD }}
+          INTENTLY_KEY_ALIAS: ${{ secrets.INTENTLY_KEY_ALIAS }}
+          INTENTLY_KEY_PASSWORD: ${{ secrets.INTENTLY_KEY_PASSWORD }}
         run: |
           if [ -n "$INTENTLY_KEYSTORE_BASE64" ]; then
             printf '%s' "$INTENTLY_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/intently.keystore"
+            if ! keytool -list -keystore "$RUNNER_TEMP/intently.keystore" -storepass "$INTENTLY_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "Keystore decoded but store password check failed."
+              exit 1
+            fi
             echo "INTENTLY_KEYSTORE_FILE=$RUNNER_TEMP/intently.keystore" >> "$GITHUB_ENV"
-            echo "Stable signing keystore restored."
+            echo "INTENTLY_KEYSTORE_PASSWORD=$INTENTLY_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_ALIAS=$INTENTLY_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "INTENTLY_KEY_PASSWORD=$INTENTLY_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Stable signing keystore restored and verified."
           else
             echo "No signing secret set; using default debug signing."
           fi

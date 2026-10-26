@@ -28,8 +28,12 @@ android {
     // .github/workflows/build.yml), all builds are signed with one persistent
     // keystore so APKs can update over each other instead of forcing reinstalls.
     def ciKeystore = System.getenv("INTENTLY_KEYSTORE_FILE")
+    def ciSigningOk = ciKeystore != null && file(ciKeystore).exists()
+        && System.getenv("INTENTLY_KEYSTORE_PASSWORD") != null
+        && System.getenv("INTENTLY_KEY_ALIAS") != null
+        && System.getenv("INTENTLY_KEY_PASSWORD") != null
     signingConfigs {
-        if (ciKeystore != null) {
+        if (ciSigningOk) {
             ci {
                 storeFile file(ciKeystore)
                 storePassword System.getenv("INTENTLY_KEYSTORE_PASSWORD")
@@ -44,14 +48,14 @@ android {
             debuggable false
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (ciKeystore != null) signingConfig signingConfigs.ci
+            if (ciSigningOk) signingConfig signingConfigs.ci
         }
         debug {
             debuggable true
             minifyEnabled false
             applicationIdSuffix ".debug"
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (ciKeystore != null) signingConfig signingConfigs.ci
+            if (ciSigningOk) signingConfig signingConfigs.ci
         }
     }
     buildFeatures {
