@@ -97,7 +97,9 @@ class AppDrawerFragment : BaseFragment() {
             binding.search.queryHint = getString(R.string.folder_select_app)
         else if (flag == Constants.FLAG_RENAME_INTENTION) {
             binding.search.queryHint = getString(R.string.intention_name)
-            binding.recyclerView.visibility = View.GONE
+            // INVISIBLE keeps the list's space so the search bar stays at the same
+            // position as with the app list visible (not pushed behind the keyboard)
+            binding.recyclerView.visibility = View.INVISIBLE
             if (initialQuery.isNotEmpty())
                 binding.search.setQuery(initialQuery, false)
         }

@@ -23,12 +23,14 @@
             android:orientation="vertical"
             android:paddingVertical="64dp">
 
-            <LinearLayout
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="@drawable/rounded_rect_shade_color"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:alpha="0.25"
+                android:background="?attr/primaryColor" />
+
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="16dp">
@@ -90,12 +92,14 @@
 
             </LinearLayout>
 
-            <LinearLayout
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="12dp"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/rounded_rect_shade_color"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:alpha="0.25"
+                android:background="?attr/primaryColor" />
+
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="16dp"
@@ -217,12 +221,14 @@
 
             </LinearLayout>
 
-            <LinearLayout
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="12dp"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/rounded_rect_shade_color"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:alpha="0.25"
+                android:background="?attr/primaryColor" />
+
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="16dp"
@@ -394,12 +400,6 @@
 
             </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="12dp"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/rounded_rect_shade_color"
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="16dp">
@@ -584,15 +584,6 @@
                     android:text="@string/x_twitter" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/footer"
-                style="@style/TextSmall"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:letterSpacing="0.03"
-                android:padding="12dp"
-                android:text="@string/new_app_note_safe" />
 
         </LinearLayout>
 

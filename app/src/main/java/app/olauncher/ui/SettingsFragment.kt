@@ -54,7 +54,6 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
-    private val showPentastic = System.currentTimeMillis() % 2 == 0L
     private var dialog: OlDialog? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -93,8 +92,6 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
         initClickListeners()
         initObservers()
 
-        if (showPentastic)
-            binding.footer.text = getText(R.string.new_app_minimal_todo_lists)
     }
 
     override fun onClick(view: View) {
@@ -135,11 +132,6 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
             R.id.twitter -> requireContext().openUrl(Constants.URL_TWITTER_TANUJ)
             R.id.github -> requireContext().openUrl(Constants.URL_OLAUNCHER_GITHUB)
             R.id.privacy -> requireContext().openUrl(Constants.URL_OLAUNCHER_PRIVACY)
-            R.id.footer -> {
-                requireContext().openUrl(
-                    if (showPentastic) Constants.URL_PENTASTIC else Constants.URL_NTS
-                )
-            }
         }
     }
 
@@ -188,7 +180,6 @@ class SettingsFragment : BaseFragment(), View.OnClickListener, View.OnLongClickL
         binding.twitter.setOnClickListener(this)
         binding.github.setOnClickListener(this)
         binding.privacy.setOnClickListener(this)
-        binding.footer.setOnClickListener(this)
 
         binding.dailyWallpaper.setOnLongClickListener(this)
         binding.alignment.setOnLongClickListener(this)
