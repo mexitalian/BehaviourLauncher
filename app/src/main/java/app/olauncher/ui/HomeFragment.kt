@@ -128,6 +128,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     override fun onResume() {
         super.onResume()
+        // a travel gesture cannot survive leaving the screen (drawer, launch,
+        // navigation): clear any stuck flight so the header name never stays hidden
+        if (travelInProgress) {
+            travelInProgress = false
+            travelRow = null
+            binding.folderWordProxy.isVisible = false
+            binding.folderWordProxy.translationX = 0f
+            binding.folderWordProxy.translationY = 0f
+        }
         populateHomeScreen(false)
         viewModel.isOlauncherDefault()
         if (prefs.showStatusBar) showStatusBar()
@@ -793,6 +802,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         views.forEachIndexed { index, view ->
             val defaultListener = rowTouchListeners[view.id]
+            // while the word is in flight the travel gesture owns its row:
+            // swapping listeners mid-gesture orphans the travel and leaves the
+            // header name hidden forever
+            val keepListeners = travelInProgress
             val stagedMember = (rows.getOrNull(index) as? HomeRow.AppRow)
                 ?.takeIf { it.member.packageName in stagedForRemoval }
             view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx)
@@ -809,10 +822,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
                     // drag the word up to travel into the folder view (instant on e-ink)
-                    view.setOnTouchListener(
-                        if (requireContext().isEinkDisplay()) defaultListener
-                        else folderTravelListener
-                    )
+                    if (!keepListeners)
+                        view.setOnTouchListener(
+                            if (requireContext().isEinkDisplay()) defaultListener
+                            else folderTravelListener
+                        )
                 }
 
                 is HomeRow.AppRow -> {
@@ -824,13 +838,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                         view.text = stagedRemovalLabel(row.folderId, row.member.packageName)
                         view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx * 0.65f)
                         view.movementMethod = LinkMovementMethod.getInstance()
-                        view.setOnTouchListener(null)
+                        if (!keepListeners) view.setOnTouchListener(null)
                     } else {
                         view.text = row.member.label ?: appLabelFor(row.member.packageName)
                         view.movementMethod = null
-                        view.setOnTouchListener(
-                            if (editMode) editRowSwipeListener else defaultListener
-                        )
+                        if (!keepListeners)
+                            view.setOnTouchListener(
+                                if (editMode) editRowSwipeListener else defaultListener
+                            )
                     }
                 }
 
@@ -840,7 +855,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.tag = ADD_TAG + row.folderId
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
 
                 is HomeRow.EmptyRow -> {
@@ -849,7 +864,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.tag = EMPTY_TAG
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
 
                 null -> {
@@ -857,7 +872,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.text = ""
                     view.tag = null
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
             }
         }
@@ -1027,8 +1042,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 row.removeCallbacks(travelLongPress)
                 when {
-                    travelInProgress ->
+                    travelInProgress && row === travelRow ->
                         finishTravel(event.rawY - travelStartY)
+                    travelInProgress ->
+                        // another row grabbed mid-flight: still a working surface
+                        row.performClick()
                     !travelMoved && event.actionMasked == MotionEvent.ACTION_UP ->
                         row.performClick()
                     else -> {
