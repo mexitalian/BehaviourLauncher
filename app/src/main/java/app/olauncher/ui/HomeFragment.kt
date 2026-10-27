@@ -939,6 +939,9 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         val row = views.firstOrNull { it.tag?.toString() == FOLDER_TAG + folderId } ?: return
         val proxy = binding.folderWordProxy
         proxy.text = verb
+        proxy.setTextSize(TypedValue.COMPLEX_UNIT_PX, binding.expandedFolderName.textSize)
+        proxy.scaleX = 1f
+        proxy.scaleY = 1f
         proxy.x = travelBaseX
         proxy.y = travelBaseY
         proxy.translationX = 0f
@@ -949,7 +952,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
         val targetX = (rowLoc[0] - rootLoc[0]).toFloat()
         val targetY = (rowLoc[1] - rootLoc[1]).toFloat()
-        springProxy(targetX - travelBaseX, targetY - travelBaseY) { _ ->
+        springProxy(targetX - travelBaseX, targetY - travelBaseY, travelScaleAtRow()) { _ ->
             proxy.isVisible = false
             proxy.translationX = 0f
             proxy.translationY = 0f
@@ -1054,6 +1057,9 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         val proxy = binding.folderWordProxy
         proxy.text = row.text
+        proxy.setTextSize(TypedValue.COMPLEX_UNIT_PX, binding.expandedFolderName.textSize)
+        proxy.scaleX = travelScaleAtRow()
+        proxy.scaleY = travelScaleAtRow()
         val rowLoc = IntArray(2); row.getLocationOnScreen(rowLoc)
         val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
         travelBaseX = (rowLoc[0] - rootLoc[0]).toFloat()
@@ -1067,6 +1073,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         // name stays hidden until the word settles in its slot
         enterIntentionView(id)
         proxy.isVisible = true
+    }
+
+    /** The proxy is set in the header's type size but scaled down to the
+     *  row's size at lift-off, then springs up to full size in the header. */
+    private fun travelScaleAtRow(): Float {
+        val headerSize = binding.expandedFolderName.textSize
+        if (headerSize <= 0f || rowTextSizePx <= 0f) return 1f
+        return (rowTextSizePx / headerSize).coerceAtMost(1f)
     }
 
     private fun headerLocInRoot(): FloatArray {
@@ -1087,7 +1101,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         val commit = dy < travelY * 0.4f
         val endX = if (commit) target[0] - travelBaseX else 0f
         val endY = if (commit) travelY else 0f
-        springProxy(endX, endY) { canceled ->
+        val endScale = if (commit) 1f else proxy.scaleX
+        springProxy(endX, endY, endScale) { canceled ->
             travelInProgress = false
             proxy.isVisible = false
             proxy.translationX = 0f
@@ -1099,7 +1114,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
     }
 
-    private fun springProxy(endX: Float, endY: Float, onEnd: (canceled: Boolean) -> Unit) {
+    private fun springProxy(endX: Float, endY: Float, endScale: Float, onEnd: (canceled: Boolean) -> Unit) {
         val proxy = binding.folderWordProxy
         var ended = false
         val settle = { canceled: Boolean ->
@@ -1120,6 +1135,22 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 dampingRatio = 0.8f
             }
             minimumVisibleChange = 1f
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
+        SpringAnimation(proxy, DynamicAnimation.SCALE_X, endScale).apply {
+            spring = SpringForce(endScale).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
+        SpringAnimation(proxy, DynamicAnimation.SCALE_Y, endScale).apply {
+            spring = SpringForce(endScale).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
             addEndListener { _, canceled, _, _ -> settle(canceled) }
             start()
         }
