@@ -70,6 +70,7 @@ android {
 }
 
 dependencies {
+    implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
     implementation fileTree(dir: "libs", include: ["*.jar"])
     implementation libs.kotlin.stdlib
     implementation libs.core.ktx
