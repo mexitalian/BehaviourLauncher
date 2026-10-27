@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.res.Configuration
+import android.graphics.Paint
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -57,7 +58,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private lateinit var prefs: Prefs
     private lateinit var folderStore: FolderStore
     private var expandedFolderId: Long? = null
-    private var actionMenuVisible = false
+    private var removeMode = false
     private var confirmDeleteVisible = false
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
@@ -121,7 +122,16 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     tag.startsWith(FAPP_TAG) -> {
                         val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
                         if (parts.size == 2)
-                            folderAppClicked(parts[0].toLongOrNull() ?: 0L, parts[1])
+                            if (removeMode)
+                                removeFolderApp(parts[0].toLongOrNull() ?: 0L, parts[1])
+                            else
+                                folderAppClicked(parts[0].toLongOrNull() ?: 0L, parts[1])
+                    }
+
+                    tag.startsWith(ADD_TAG) -> {
+                        val folderId = tag.removePrefix(ADD_TAG).toLongOrNull() ?: 0L
+                        if (folderId > 0)
+                            showAppList(Constants.FLAG_ADD_TO_FOLDER, folderId = folderId)
                     }
 
                     tag.startsWith(FOLDER_TAG) -> folderClicked(tag.removePrefix(FOLDER_TAG))
@@ -307,7 +317,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         binding.expandedFolderName.setOnTouchListener(object : OnSwipeTouchListener(requireContext()) {
             override fun onClick() = exitIntentionView()
-            override fun onLongClick() = toggleFolderActions()
+            override fun onLongClick() = toggleRemoveMode()
             override fun onSwipeDown() = exitIntentionView()
         })
         binding.actionWord1.setOnClickListener { onFolderAction(1) }
@@ -747,6 +757,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         val rows = mutableListOf<HomeRow>()
         if (expanded != null) {
             expanded.members.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
+            if (!removeMode)
+                rows.add(HomeRow.AddRow(expanded.id))
         } else {
             val slots = prefs.homeAppsNum.coerceIn(0, views.size)
             folders.take(slots).forEach { rows.add(HomeRow.FolderRow(it)) }
@@ -754,6 +766,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
 
         views.forEachIndexed { index, view ->
+            // strikethrough (remove mode) is applied per render below
+            view.paintFlags = view.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             when (val row = rows.getOrNull(index)) {
                 is HomeRow.FolderRow -> {
                     if (row.folder.verb.isBlank()) {
@@ -771,6 +785,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.text = row.member.label ?: appLabelFor(row.member.packageName)
                     view.hint = ""
                     view.tag = FAPP_TAG + row.folderId + ":" + row.member.packageName
+                    view.visibility = View.VISIBLE
+                    if (removeMode)
+                        view.paintFlags = view.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+                }
+
+                is HomeRow.AddRow -> {
+                    view.text = ""
+                    view.hint = getString(R.string.action_add_app)
+                    view.tag = ADD_TAG + row.folderId
                     view.visibility = View.VISIBLE
                 }
 
@@ -824,7 +847,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     /** Enter the folder view; toast when there is no primary app yet. */
     private fun enterIntentionView(folderId: Long) {
         expandedFolderId = folderId
-        actionMenuVisible = false
+        removeMode = false
         confirmDeleteVisible = false
         val folder = folderStore.folders.firstOrNull { it.id == folderId }
         if (folder == null || folder.members.isEmpty())
@@ -836,7 +859,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private fun exitIntentionView() {
         expandedFolderId = null
-        actionMenuVisible = false
+        removeMode = false
         confirmDeleteVisible = false
         folderStore.cleanupEmptyUnnamed()
         populateDateTime()
@@ -888,7 +911,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private fun populateExpandedHeader() {
         val expanded = expandedFolderId?.let { id -> folderStore.folders.firstOrNull { it.id == id } }
         if (expanded == null) {
-            actionMenuVisible = false
+            removeMode = false
             confirmDeleteVisible = false
             binding.expandedFolderName.isVisible = false
             binding.folderActionLine.isVisible = false
@@ -908,26 +931,38 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
         binding.expandedFolderName.isVisible = true
 
-        binding.folderActionLine.isVisible = actionMenuVisible
+        binding.folderActionLine.isVisible = true
         if (confirmDeleteVisible) {
             binding.actionWord1.text = getString(R.string.action_yes_delete)
             binding.actionWord2.text = getString(R.string.action_no_cancel)
             binding.actionWord3.isVisible = false
             binding.actionDivider2.isVisible = false
         } else {
-            binding.actionWord1.text = getString(R.string.action_add_app)
+            binding.actionWord1.text = getString(R.string.action_delete)
             binding.actionWord2.text = getString(R.string.action_rename)
-            binding.actionWord3.text = getString(R.string.action_delete)
-            binding.actionWord3.isVisible = true
-            binding.actionDivider2.isVisible = true
+            binding.actionWord3.isVisible = false
+            binding.actionDivider2.isVisible = false
         }
     }
 
-    private fun toggleFolderActions() {
+    /** Long-press on the intention name: tap members to remove them. */
+    private fun toggleRemoveMode() {
         if (expandedFolderId == null) return
-        confirmDeleteVisible = false
-        actionMenuVisible = !actionMenuVisible
+        removeMode = !removeMode
+        populateFolders()
+        if (removeMode)
+            requireContext().showToast(getString(R.string.folder_remove_mode_hint))
+    }
+
+    private fun removeFolderApp(folderId: Long, packageName: String) {
+        if (folderId <= 0) return
+        folderStore.removeMember(folderId, packageName)
+        populateFolders()
         populateExpandedHeader()
+        val stillEmpty = folderStore.folders
+            .firstOrNull { it.id == folderId }?.members.isNullOrEmpty()
+        if (stillEmpty)
+            requireContext().showToast(getString(R.string.add_primary_app_hint))
     }
 
     private fun onFolderAction(word: Int) {
@@ -946,12 +981,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             return
         }
         when (word) {
-            1 -> showAppList(Constants.FLAG_ADD_TO_FOLDER, folderId = folderId)
-            2 -> renameIntention(folderId)
-            3 -> {
+            1 -> {
                 confirmDeleteVisible = true
                 populateExpandedHeader()
             }
+            2 -> renameIntention(folderId)
         }
     }
 
@@ -973,12 +1007,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private sealed interface HomeRow {
         data class FolderRow(val folder: VerbFolder) : HomeRow
         data class AppRow(val folderId: Long, val member: Member) : HomeRow
+        data class AddRow(val folderId: Long) : HomeRow
         data object EmptyRow : HomeRow
     }
 
     companion object {
         private const val FOLDER_TAG = "folder:"
         private const val FAPP_TAG = "fapp:"
+        private const val ADD_TAG = "addapp:"
         private const val EMPTY_TAG = "empty:"
     }
 
