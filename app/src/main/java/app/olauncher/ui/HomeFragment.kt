@@ -21,6 +21,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.MotionEvent
 import android.view.ViewConfiguration
+import android.view.VelocityTracker
 import android.view.WindowInsets
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
@@ -136,6 +137,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             binding.folderWordProxy.isVisible = false
             binding.folderWordProxy.translationX = 0f
             binding.folderWordProxy.translationY = 0f
+            listOf(
+                binding.homeApp1, binding.homeApp2, binding.homeApp3, binding.homeApp4,
+                binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
+            ).forEach { it.alpha = 1f }
         }
         populateHomeScreen(false)
         viewModel.isOlauncherDefault()
@@ -965,9 +970,9 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         row.alpha = 0f
         val rowLoc = IntArray(2); row.getLocationOnScreen(rowLoc)
         val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
-        val targetX = (rowLoc[0] - rootLoc[0]).toFloat()
-        val targetY = (rowLoc[1] - rootLoc[1]).toFloat()
-        springProxy(targetX - travelBaseX, targetY - travelBaseY, travelScaleAtRow()) { _ ->
+        val targetX = (rowLoc[0] - rootLoc[0]).toFloat() + row.paddingLeft - proxy.paddingLeft
+        val targetY = (rowLoc[1] - rootLoc[1]).toFloat() + row.paddingTop - proxy.paddingTop
+        springProxy(targetX - travelBaseX, targetY - travelBaseY, travelScaleAtRow(), 0f, 0f) { _ ->
             proxy.isVisible = false
             proxy.translationX = 0f
             proxy.translationY = 0f
@@ -1010,50 +1015,72 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     }
 
     private val travelSlopPx by lazy { ViewConfiguration.get(requireContext()).scaledTouchSlop }
+    private val travelVelocity by lazy { VelocityTracker.obtain() }
+    private var travelSettled = false // the slot caught the word mid-drag
 
     private val folderTravelListener = View.OnTouchListener { v, event ->
         val row = v as TextView
+        if (event.actionMasked != MotionEvent.ACTION_CANCEL)
+            travelVelocity.addMovement(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 travelRow = row
                 travelMoved = false
                 travelInProgress = false
+                travelSettled = false
                 travelStartX = event.rawX
                 travelStartY = event.rawY
+                travelVelocity.clear()
                 row.postDelayed(travelLongPress, ViewConfiguration.getLongPressTimeout().toLong())
                 true
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (travelSettled) return@OnTouchListener true
                 val dx = event.rawX - travelStartX
                 val dy = event.rawY - travelStartY
-                if (travelInProgress) {
-                    binding.folderWordProxy.translationX = dx
-                    binding.folderWordProxy.translationY = dy
-                } else if (-dy > travelSlopPx && abs(dy) > abs(dx)) {
-                    beginTravel(row)
-                } else if (abs(dx) > travelSlopPx || abs(dy) > travelSlopPx) {
-                    travelMoved = true
-                    row.removeCallbacks(travelLongPress)
+                when {
+                    travelInProgress ->
+                        dragWord(dx, dy)
+                    -dy > travelSlopPx && abs(dy) > abs(dx) -> {
+                        beginTravel(row)
+                        dragWord(dx, dy) // replay the slop so the word never snaps back
+                    }
+                    abs(dx) > travelSlopPx || abs(dy) > travelSlopPx -> {
+                        travelMoved = true
+                        row.removeCallbacks(travelLongPress)
+                    }
                 }
                 true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 row.removeCallbacks(travelLongPress)
-                when {
-                    travelInProgress && row === travelRow ->
-                        finishTravel(event.rawY - travelStartY)
-                    travelInProgress ->
-                        // another row grabbed mid-flight: still a working surface
-                        row.performClick()
-                    !travelMoved && event.actionMasked == MotionEvent.ACTION_UP ->
-                        row.performClick()
-                    else -> {
-                        val dx = event.rawX - travelStartX
-                        val dy = event.rawY - travelStartY
-                        if (abs(dx) > 100 && abs(dx) > abs(dy)) {
-                            if (dx > 0) openSwipeRightApp() else openSwipeLeftApp()
+                if (!travelSettled) {
+                    val vx: Float
+                    val vy: Float
+                    if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        travelVelocity.computeCurrentVelocity(1000)
+                        vx = travelVelocity.xVelocity
+                        vy = travelVelocity.yVelocity
+                    } else {
+                        vx = 0f
+                        vy = 0f
+                    }
+                    when {
+                        travelInProgress && row === travelRow ->
+                            finishTravel(event.rawY - travelStartY, vx, vy)
+                        travelInProgress ->
+                            // another row grabbed mid-flight: still a working surface
+                            row.performClick()
+                        !travelMoved && event.actionMasked == MotionEvent.ACTION_UP ->
+                            row.performClick()
+                        else -> {
+                            val dx = event.rawX - travelStartX
+                            val dy = event.rawY - travelStartY
+                            if (abs(dx) > 100 && abs(dx) > abs(dy)) {
+                                if (dx > 0) openSwipeRightApp() else openSwipeLeftApp()
+                            }
                         }
                     }
                 }
@@ -1078,10 +1105,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         proxy.setTextSize(TypedValue.COMPLEX_UNIT_PX, binding.expandedFolderName.textSize)
         proxy.scaleX = travelScaleAtRow()
         proxy.scaleY = travelScaleAtRow()
+        // grow from the word's own corner: lift-off keeps the row's alignment
+        proxy.pivotX = 0f
+        proxy.pivotY = 0f
         val rowLoc = IntArray(2); row.getLocationOnScreen(rowLoc)
         val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
-        travelBaseX = (rowLoc[0] - rootLoc[0]).toFloat()
-        travelBaseY = (rowLoc[1] - rootLoc[1]).toFloat()
+        // overlay the row's text exactly (rows carry vertical padding)
+        travelBaseX = (rowLoc[0] - rootLoc[0]).toFloat() + row.paddingLeft - proxy.paddingLeft
+        travelBaseY = (rowLoc[1] - rootLoc[1]).toFloat() + row.paddingTop - proxy.paddingTop
         proxy.x = travelBaseX
         proxy.y = travelBaseY
         proxy.translationX = 0f
@@ -1110,17 +1141,58 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         )
     }
 
-    /** Released mid-flight: past ~40% of the way the word is caught by the
-     *  header slot's gravitational pull; otherwise it springs back to the row. */
-    private fun finishTravel(dy: Float) {
+    /** The word follows the finger, but the slot's gravity holds it: it can
+     *  never be dragged past the header, and is caught the moment it arrives. */
+    private fun dragWord(dx: Float, dy: Float) {
         val proxy = binding.folderWordProxy
         val target = headerLocInRoot()
         val travelY = target[1] - travelBaseY
-        val commit = dy < travelY * 0.4f
+        if (travelY < 0f) {
+            proxy.translationY = dy.coerceIn(travelY * 0.95f, 0f)
+            if (dy <= travelY * 0.95f) {
+                settleTravelIntoSlot()
+                return
+            }
+        } else {
+            proxy.translationY = dy.coerceIn(0f, travelY * 0.95f)
+            if (dy >= travelY * 0.95f) {
+                settleTravelIntoSlot()
+                return
+            }
+        }
+        proxy.translationX = dx
+    }
+
+    /** The slot catches the word mid-drag: it settles on its own, even while
+     *  the finger is still down. */
+    private fun settleTravelIntoSlot() {
+        if (travelSettled) return
+        travelSettled = true
+        val proxy = binding.folderWordProxy
+        val target = headerLocInRoot()
+        springProxy(target[0] - travelBaseX, target[1] - travelBaseY, 1f, 0f, 0f) { canceled ->
+            travelInProgress = false
+            proxy.isVisible = false
+            proxy.translationX = 0f
+            proxy.translationY = 0f
+            if (!canceled) populateExpandedHeader()
+        }
+    }
+
+    /** Released before the slot caught the word: committed past 40% of the way
+     *  (or on a real upward flick); otherwise it springs back to the row. The
+     *  flick's velocity is carried over into the spring. */
+    private fun finishTravel(dy: Float, vx: Float, vy: Float) {
+        val proxy = binding.folderWordProxy
+        val target = headerLocInRoot()
+        val travelY = target[1] - travelBaseY
+        val commit = dy < travelY * 0.4f || (travelY < 0f && vy < -1200f)
         val endX = if (commit) target[0] - travelBaseX else 0f
         val endY = if (commit) travelY else 0f
         val endScale = if (commit) 1f else proxy.scaleX
-        springProxy(endX, endY, endScale) { canceled ->
+        val startVx = if (commit) vx * 0.25f else 0f
+        val startVy = if (commit) vy * 0.25f else 0f
+        springProxy(endX, endY, endScale, startVx, startVy) { canceled ->
             travelInProgress = false
             proxy.isVisible = false
             proxy.translationX = 0f
@@ -1132,42 +1204,52 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
     }
 
-    private fun springProxy(endX: Float, endY: Float, endScale: Float, onEnd: (canceled: Boolean) -> Unit) {
+    private fun springProxy(
+        endX: Float,
+        endY: Float,
+        endScale: Float,
+        startVx: Float,
+        startVy: Float,
+        onEnd: (canceled: Boolean) -> Unit,
+    ) {
         val proxy = binding.folderWordProxy
         var ended = false
         val settle = { canceled: Boolean ->
             if (!ended) { ended = true; onEnd(canceled) }
         }
+        // critically damped: firm pull, no overshoot past the slot
         SpringAnimation(proxy, DynamicAnimation.TRANSLATION_X, endX).apply {
             spring = SpringForce(endX).apply {
-                stiffness = 400f
-                dampingRatio = 0.8f
+                stiffness = 600f
+                dampingRatio = 1.0f
             }
+            setStartVelocity(startVx)
             minimumVisibleChange = 1f
             addEndListener { _, canceled, _, _ -> settle(canceled) }
             start()
         }
         SpringAnimation(proxy, DynamicAnimation.TRANSLATION_Y, endY).apply {
             spring = SpringForce(endY).apply {
-                stiffness = 400f
-                dampingRatio = 0.8f
+                stiffness = 600f
+                dampingRatio = 1.0f
             }
+            setStartVelocity(startVy)
             minimumVisibleChange = 1f
             addEndListener { _, canceled, _, _ -> settle(canceled) }
             start()
         }
         SpringAnimation(proxy, DynamicAnimation.SCALE_X, endScale).apply {
             spring = SpringForce(endScale).apply {
-                stiffness = 400f
-                dampingRatio = 0.8f
+                stiffness = 600f
+                dampingRatio = 1.0f
             }
             addEndListener { _, canceled, _, _ -> settle(canceled) }
             start()
         }
         SpringAnimation(proxy, DynamicAnimation.SCALE_Y, endScale).apply {
             spring = SpringForce(endScale).apply {
-                stiffness = 400f
-                dampingRatio = 0.8f
+                stiffness = 600f
+                dampingRatio = 1.0f
             }
             addEndListener { _, canceled, _, _ -> settle(canceled) }
             start()
