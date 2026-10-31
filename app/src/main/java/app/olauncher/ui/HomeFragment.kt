@@ -1,28 +1,19 @@
 package app.olauncher.ui
 
-import android.animation.ValueAnimator
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.res.Configuration
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.TextPaint
-import android.text.method.LinkMovementMethod
-import android.text.style.ClickableSpan
+import android.graphics.Paint
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.MotionEvent
-import android.view.ViewConfiguration
 import android.view.WindowInsets
-import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -32,9 +23,6 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.core.view.setPadding
-import androidx.dynamicanimation.animation.DynamicAnimation
-import androidx.dynamicanimation.animation.SpringAnimation
-import androidx.dynamicanimation.animation.SpringForce
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
@@ -52,7 +40,6 @@ import app.olauncher.helper.dpToPx
 import app.olauncher.helper.expandNotificationDrawer
 import app.olauncher.helper.getChangedAppTheme
 import app.olauncher.helper.getUserHandleFromString
-import app.olauncher.helper.isEinkDisplay
 import app.olauncher.helper.isPackageInstalled
 import app.olauncher.helper.openAlarmApp
 import app.olauncher.helper.openCalendar
@@ -65,22 +52,14 @@ import app.olauncher.listener.ViewSwipeTouchListener
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.sin
 
 class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListener {
 
     private lateinit var prefs: Prefs
     private lateinit var folderStore: FolderStore
     private var expandedFolderId: Long? = null
-    private var editMode = false
-    private val stagedForRemoval = mutableSetOf<String>()
-    private var rowTextSizePx = 0f
-    private val rowTouchListeners = mutableMapOf<Int, View.OnTouchListener>()
-    private var wiggleAnimator: ValueAnimator? = null
-    private var swipeStartX = 0f
-    private var swipeStartY = 0f
-    private var swipeHorizontal = false
+    private var removeMode = false
+    private var confirmDeleteVisible = false
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -142,9 +121,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                 when {
                     tag.startsWith(FAPP_TAG) -> {
                         val parts = tag.removePrefix(FAPP_TAG).split(":", limit = 2)
-                        if (parts.size == 2 && !editMode)
-                            // in edit mode taps never launch; staged rows use inline spans
-                            folderAppClicked(parts[0].toLongOrNull() ?: 0L, parts[1])
+                        if (parts.size == 2)
+                            if (removeMode)
+                                removeFolderApp(parts[0].toLongOrNull() ?: 0L, parts[1])
+                            else
+                                folderAppClicked(parts[0].toLongOrNull() ?: 0L, parts[1])
                     }
 
                     tag.startsWith(ADD_TAG) -> {
@@ -293,14 +274,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private fun initSwipeTouchListener() {
         val context = requireContext()
         binding.mainLayout.setOnTouchListener(getSwipeGestureListener(context))
-        listOf(
-            binding.homeApp1, binding.homeApp2, binding.homeApp3, binding.homeApp4,
-            binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
-        ).forEach { row ->
-            val listener = getViewSwipeTouchListener(context, row)
-            rowTouchListeners[row.id] = listener
-            row.setOnTouchListener(listener)
-        }
+        binding.homeApp1.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp1))
+        binding.homeApp2.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp2))
+        binding.homeApp3.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp3))
+        binding.homeApp4.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp4))
+        binding.homeApp5.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp5))
+        binding.homeApp6.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp6))
+        binding.homeApp7.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp7))
+        binding.homeApp8.setOnTouchListener(getViewSwipeTouchListener(context, binding.homeApp8))
     }
 
     private fun initClickListeners() {
@@ -336,11 +317,12 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         binding.expandedFolderName.setOnTouchListener(object : OnSwipeTouchListener(requireContext()) {
             override fun onClick() = exitIntentionView()
-            override fun onLongClick() = toggleEditMode()
+            override fun onLongClick() = toggleRemoveMode()
             override fun onSwipeDown() = exitIntentionView()
         })
-        // folder view has no inline action line: rename lives on the home surface,
-        // edit mode is toggled by long-pressing the intention name
+        binding.actionWord1.setOnClickListener { onFolderAction(1) }
+        binding.actionWord2.setOnClickListener { onFolderAction(2) }
+        binding.actionWord3.setOnClickListener { onFolderAction(3) }
     }
 
     private fun setHomeAlignment(horizontalGravity: Int = prefs.homeAlignment) {
@@ -769,14 +751,13 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             binding.homeApp1, binding.homeApp2, binding.homeApp3, binding.homeApp4,
             binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
         )
-        if (rowTextSizePx == 0f) rowTextSizePx = binding.homeApp1.textSize
         val folders = folderStore.folders
         val expanded = expandedFolderId?.let { id -> folders.firstOrNull { it.id == id } }
 
         val rows = mutableListOf<HomeRow>()
         if (expanded != null) {
             expanded.members.forEach { rows.add(HomeRow.AppRow(expanded.id, it)) }
-            if (editMode)
+            if (!removeMode)
                 rows.add(HomeRow.AddRow(expanded.id))
         } else {
             val slots = prefs.homeAppsNum.coerceIn(0, views.size)
@@ -785,10 +766,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         }
 
         views.forEachIndexed { index, view ->
-            val defaultListener = rowTouchListeners[view.id]
-            val stagedMember = (rows.getOrNull(index) as? HomeRow.AppRow)
-                ?.takeIf { it.member.packageName in stagedForRemoval }
-            view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx)
+            // strikethrough (remove mode) is applied per render below
+            view.paintFlags = view.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             when (val row = rows.getOrNull(index)) {
                 is HomeRow.FolderRow -> {
                     if (row.folder.verb.isBlank()) {
@@ -800,27 +779,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     }
                     view.tag = FOLDER_TAG + row.folder.id
                     view.visibility = View.VISIBLE
-                    view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
                 }
 
                 is HomeRow.AppRow -> {
+                    view.text = row.member.label ?: appLabelFor(row.member.packageName)
                     view.hint = ""
                     view.tag = FAPP_TAG + row.folderId + ":" + row.member.packageName
                     view.visibility = View.VISIBLE
-                    if (stagedMember != null) {
-                        // swiped away: the slot keeps its height, smaller remove · undo line
-                        view.text = stagedRemovalLabel(row.folderId, row.member.packageName)
-                        view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx * 0.65f)
-                        view.movementMethod = LinkMovementMethod.getInstance()
-                        view.setOnTouchListener(null)
-                    } else {
-                        view.text = row.member.label ?: appLabelFor(row.member.packageName)
-                        view.movementMethod = null
-                        view.setOnTouchListener(
-                            if (editMode) editRowSwipeListener else defaultListener
-                        )
-                    }
+                    if (removeMode)
+                        view.paintFlags = view.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
                 }
 
                 is HomeRow.AddRow -> {
@@ -828,8 +795,6 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.hint = getString(R.string.action_add_app)
                     view.tag = ADD_TAG + row.folderId
                     view.visibility = View.VISIBLE
-                    view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
                 }
 
                 is HomeRow.EmptyRow -> {
@@ -837,16 +802,12 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.hint = getString(R.string.intent_placeholder)
                     view.tag = EMPTY_TAG
                     view.visibility = View.VISIBLE
-                    view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
                 }
 
                 null -> {
                     view.visibility = View.GONE
                     view.text = ""
                     view.tag = null
-                    view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
                 }
             }
         }
@@ -886,9 +847,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     /** Enter the folder view; toast when there is no primary app yet. */
     private fun enterIntentionView(folderId: Long) {
         expandedFolderId = folderId
-        editMode = false
-        stagedForRemoval.clear()
-        setWiggle(false)
+        removeMode = false
+        confirmDeleteVisible = false
         val folder = folderStore.folders.firstOrNull { it.id == folderId }
         if (folder == null || folder.members.isEmpty())
             requireContext().showToast(getString(R.string.add_primary_app_hint))
@@ -899,9 +859,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private fun exitIntentionView() {
         expandedFolderId = null
-        editMode = false
-        stagedForRemoval.clear()
-        setWiggle(false)
+        removeMode = false
+        confirmDeleteVisible = false
         folderStore.cleanupEmptyUnnamed()
         populateDateTime()
         populateFolders()
@@ -949,13 +908,11 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     }
 
     /** The folder view header: intention name in the clock position, inline actions beneath. */
-    /** The folder view header: only the intention name in the clock position. */
     private fun populateExpandedHeader() {
         val expanded = expandedFolderId?.let { id -> folderStore.folders.firstOrNull { it.id == id } }
         if (expanded == null) {
-            editMode = false
-            stagedForRemoval.clear()
-            setWiggle(false)
+            removeMode = false
+            confirmDeleteVisible = false
             binding.expandedFolderName.isVisible = false
             binding.folderActionLine.isVisible = false
             return
@@ -973,20 +930,28 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             binding.expandedFolderName.hint = ""
         }
         binding.expandedFolderName.isVisible = true
+
+        binding.folderActionLine.isVisible = true
+        if (confirmDeleteVisible) {
+            binding.actionWord1.text = getString(R.string.action_yes_delete)
+            binding.actionWord2.text = getString(R.string.action_no_cancel)
+            binding.actionWord3.isVisible = false
+            binding.actionDivider2.isVisible = false
+        } else {
+            binding.actionWord1.text = getString(R.string.action_delete)
+            binding.actionWord2.text = getString(R.string.action_rename)
+            binding.actionWord3.isVisible = false
+            binding.actionDivider2.isVisible = false
+        }
     }
 
-    /** Long-press on the intention name toggles edit mode: rows wiggle and can
-     *  be dragged/flicked away horizontally for removal; add app shows at the end. */
-    private fun toggleEditMode() {
+    /** Long-press on the intention name: tap members to remove them. */
+    private fun toggleRemoveMode() {
         if (expandedFolderId == null) return
-        editMode = !editMode
-        if (editMode) {
-            setWiggle(true)
-        } else {
-            stagedForRemoval.clear()
-            setWiggle(false)
-        }
+        removeMode = !removeMode
         populateFolders()
+        if (removeMode)
+            requireContext().showToast(getString(R.string.folder_remove_mode_hint))
     }
 
     private fun removeFolderApp(folderId: Long, packageName: String) {
@@ -1000,138 +965,27 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             requireContext().showToast(getString(R.string.add_primary_app_hint))
     }
 
-    /** The staged removal row: inline remove · undo in smaller text. */
-    private fun stagedRemovalLabel(folderId: Long, packageName: String): SpannableString {
-        val remove = getString(R.string.action_remove)
-        val undo = getString(R.string.action_undo)
-        val label = SpannableString("$remove · $undo")
-        label.setSpan(object : ClickableSpan() {
-            override fun onClick(widget: View) {
-                stagedForRemoval.remove(packageName)
-                removeFolderApp(folderId, packageName)
-            }
-
-            override fun updateDrawState(ds: TextPaint) {
-                ds.isUnderlineText = false // flat: no underline
-            }
-        }, 0, remove.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        label.setSpan(object : ClickableSpan() {
-            override fun onClick(widget: View) {
-                unstageRemoval(packageName)
-            }
-
-            override fun updateDrawState(ds: TextPaint) {
-                ds.isUnderlineText = false
-            }
-        }, remove.length + 3, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return label
-    }
-
-    private fun unstageRemoval(packageName: String) {
-        stagedForRemoval.remove(packageName)
-        populateFolders()
-    }
-
-    private val touchSlopPx by lazy { ViewConfiguration.get(requireContext()).scaledTouchSlop }
-
-    /** Edit-mode row gestures: horizontal drag/flick stages a removal; taps do nothing. */
-    private val editRowSwipeListener = View.OnTouchListener { v, event ->
-        val row = v as TextView
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                row.animate().cancel()
-                swipeStartX = event.rawX
-                swipeStartY = event.rawY
-                swipeHorizontal = false
-                true
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                val dx = event.rawX - swipeStartX
-                val dy = event.rawY - swipeStartY
-                if (!swipeHorizontal && abs(dx) > touchSlopPx && abs(dx) > abs(dy))
-                    swipeHorizontal = true
-                if (swipeHorizontal) {
-                    row.translationX = dx
-                } else if (dy > touchSlopPx * 3 && expandedFolderId != null) {
-                    // vertical drag: leave the folder view
+    private fun onFolderAction(word: Int) {
+        val folderId = expandedFolderId ?: return
+        if (confirmDeleteVisible) {
+            when (word) {
+                1 -> { // yes, delete
+                    folderStore.delete(folderId)
                     exitIntentionView()
-                    return@OnTouchListener true
                 }
-                true
-            }
-
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (swipeHorizontal) {
-                    if (abs(row.translationX) >= row.width * 0.35f)
-                        springRowAway(row)
-                    else
-                        springRowToRest(row)
+                2 -> { // no, cancel
+                    confirmDeleteVisible = false
+                    populateExpandedHeader()
                 }
-                swipeHorizontal = false
-                true
             }
-
-            else -> false
+            return
         }
-    }
-
-    private fun springRowToRest(row: TextView) {
-        SpringAnimation(row, DynamicAnimation.TRANSLATION_X, 0f).apply {
-            spring = SpringForce(0f).apply {
-                stiffness = SpringForce.STIFFNESS_MEDIUM
-                dampingRatio = SpringForce.DAMPING_RATIO_HIGH_BOUNCY
+        when (word) {
+            1 -> {
+                confirmDeleteVisible = true
+                populateExpandedHeader()
             }
-            minimumVisibleChange = 1f
-        }.start()
-    }
-
-    private fun springRowAway(row: TextView) {
-        val target = if (row.translationX > 0) row.width * 1.5f else -row.width * 1.5f
-        SpringAnimation(row, DynamicAnimation.TRANSLATION_X, target).apply {
-            spring = SpringForce(target).apply {
-                stiffness = SpringForce.STIFFNESS_LOW
-                dampingRatio = 0.75f
-            }
-            minimumVisibleChange = 1f
-            addEndListener { _, canceled, _, _ ->
-                row.translationX = 0f
-                if (!canceled) {
-                    val parts = row.tag?.toString()
-                        ?.takeIf { it.startsWith(FAPP_TAG) }
-                        ?.removePrefix(FAPP_TAG)?.split(":", limit = 2)
-                    if (parts != null && parts.size == 2)
-                        stagedForRemoval.add(parts[1])
-                    populateFolders()
-                }
-            }
-        }.start()
-    }
-
-    /** Light wiggle that runs only while edit mode is on (never on e-ink). */
-    private fun setWiggle(on: Boolean) {
-        val rows = listOf(
-            binding.homeApp1, binding.homeApp2, binding.homeApp3, binding.homeApp4,
-            binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
-        )
-        if (on) {
-            if (wiggleAnimator != null || requireContext().isEinkDisplay()) return
-            wiggleAnimator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat()).apply {
-                duration = 700L
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = LinearInterpolator()
-                addUpdateListener { animator ->
-                    val phase = animator.animatedValue as Float
-                    rows.forEachIndexed { index, row ->
-                        if (row.isVisible) row.rotation = sin(phase + index * 0.6f) * 1.5f
-                    }
-                }
-                start()
-            }
-        } else {
-            wiggleAnimator?.cancel()
-            wiggleAnimator = null
-            rows.forEach { it.rotation = 0f }
+            2 -> renameIntention(folderId)
         }
     }
 
