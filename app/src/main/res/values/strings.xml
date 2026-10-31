@@ -175,15 +175,12 @@
     <string name="unable_to_open_shortcut">Unable to open shortcut</string>
     <string name="folder_add_apps_hint">No apps in this folder yet</string>
     <string name="folder_app_missing">App not installed</string>
-    <string name="folder_remove_mode_hint">Swipe an app away to remove it</string>
     <string name="folder_select_app">Choose apps to add</string>
     <string name="action_add_app">add app</string>
     <string name="action_rename">rename</string>
     <string name="action_delete">delete</string>
     <string name="action_yes_delete">yes, delete</string>
     <string name="action_no_cancel">no, cancel</string>
-    <string name="action_remove">remove</string>
-    <string name="action_undo">undo</string>
     <string name="app_added_to_folder">Added to folder</string>
     <string name="intent_placeholder">Intent</string>
     <string name="add_primary_app_hint">Add the primary app</string>
