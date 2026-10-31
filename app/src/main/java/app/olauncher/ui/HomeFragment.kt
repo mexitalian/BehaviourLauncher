@@ -1034,7 +1034,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private val touchSlopPx by lazy { ViewConfiguration.get(requireContext()).scaledTouchSlop }
 
-    /** Edit-mode row gestures: horizontal drag/flick stages a removal; taps do nothing. */
+    /** Edit-mode row gestures: horizontal drag/flick stages a removal with the
+     *  same spring physics as the folder name travel; taps do nothing. */
     private val editRowSwipeListener = View.OnTouchListener { v, event ->
         val row = v as TextView
         when (event.actionMasked) {
