@@ -81,6 +81,13 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     private var swipeStartX = 0f
     private var swipeStartY = 0f
     private var swipeHorizontal = false
+    private var travelInProgress = false
+    private var travelRow: TextView? = null
+    private var travelMoved = false
+    private var travelStartX = 0f
+    private var travelStartY = 0f
+    private var travelBaseX = 0f
+    private var travelBaseY = 0f
     private lateinit var viewModel: MainViewModel
     private lateinit var deviceManager: DevicePolicyManager
 
@@ -121,6 +128,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     override fun onResume() {
         super.onResume()
+        // a travel gesture cannot survive leaving the screen (drawer, launch,
+        // navigation): clear any stuck flight so the header name never stays hidden
+        if (travelInProgress) {
+            travelInProgress = false
+            travelRow = null
+            binding.folderWordProxy.isVisible = false
+            binding.folderWordProxy.translationX = 0f
+            binding.folderWordProxy.translationY = 0f
+        }
         populateHomeScreen(false)
         viewModel.isOlauncherDefault()
         if (prefs.showStatusBar) showStatusBar()
@@ -786,6 +802,10 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
         views.forEachIndexed { index, view ->
             val defaultListener = rowTouchListeners[view.id]
+            // while the word is in flight the travel gesture owns its row:
+            // swapping listeners mid-gesture orphans the travel and leaves the
+            // header name hidden forever
+            val keepListeners = travelInProgress
             val stagedMember = (rows.getOrNull(index) as? HomeRow.AppRow)
                 ?.takeIf { it.member.packageName in stagedForRemoval }
             view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx)
@@ -801,7 +821,12 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.tag = FOLDER_TAG + row.folder.id
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    // drag the word up to travel into the folder view (instant on e-ink)
+                    if (!keepListeners)
+                        view.setOnTouchListener(
+                            if (requireContext().isEinkDisplay()) defaultListener
+                            else folderTravelListener
+                        )
                 }
 
                 is HomeRow.AppRow -> {
@@ -813,13 +838,14 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                         view.text = stagedRemovalLabel(row.folderId, row.member.packageName)
                         view.setTextSize(TypedValue.COMPLEX_UNIT_PX, rowTextSizePx * 0.65f)
                         view.movementMethod = LinkMovementMethod.getInstance()
-                        view.setOnTouchListener(null)
+                        if (!keepListeners) view.setOnTouchListener(null)
                     } else {
                         view.text = row.member.label ?: appLabelFor(row.member.packageName)
                         view.movementMethod = null
-                        view.setOnTouchListener(
-                            if (editMode) editRowSwipeListener else defaultListener
-                        )
+                        if (!keepListeners)
+                            view.setOnTouchListener(
+                                if (editMode) editRowSwipeListener else defaultListener
+                            )
                     }
                 }
 
@@ -829,7 +855,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.tag = ADD_TAG + row.folderId
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
 
                 is HomeRow.EmptyRow -> {
@@ -838,7 +864,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.tag = EMPTY_TAG
                     view.visibility = View.VISIBLE
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
 
                 null -> {
@@ -846,7 +872,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
                     view.text = ""
                     view.tag = null
                     view.movementMethod = null
-                    view.setOnTouchListener(defaultListener)
+                    if (!keepListeners) view.setOnTouchListener(defaultListener)
                 }
             }
         }
@@ -898,6 +924,15 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
     }
 
     private fun exitIntentionView() {
+        val leavingId = expandedFolderId
+        val animate = leavingId != null && !travelInProgress
+            && !requireContext().isEinkDisplay()
+        val verb = if (animate) binding.expandedFolderName.text.toString() else ""
+        if (animate) {
+            val start = headerLocInRoot()
+            travelBaseX = start[0]
+            travelBaseY = start[1]
+        }
         expandedFolderId = null
         editMode = false
         stagedForRemoval.clear()
@@ -906,6 +941,38 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         populateDateTime()
         populateFolders()
         populateExpandedHeader()
+        if (animate && verb.isNotBlank())
+            animateExitTravel(leavingId!!, verb)
+    }
+
+    /** The word springs back down to its home slot; the home surface is ready at once. */
+    private fun animateExitTravel(folderId: Long, verb: String) {
+        val views = listOf(
+            binding.homeApp1, binding.homeApp2, binding.homeApp3, binding.homeApp4,
+            binding.homeApp5, binding.homeApp6, binding.homeApp7, binding.homeApp8
+        )
+        val row = views.firstOrNull { it.tag?.toString() == FOLDER_TAG + folderId } ?: return
+        val proxy = binding.folderWordProxy
+        proxy.text = verb
+        proxy.setTextSize(TypedValue.COMPLEX_UNIT_PX, binding.expandedFolderName.textSize)
+        proxy.scaleX = 1f
+        proxy.scaleY = 1f
+        proxy.x = travelBaseX
+        proxy.y = travelBaseY
+        proxy.translationX = 0f
+        proxy.translationY = 0f
+        proxy.isVisible = true
+        row.alpha = 0f
+        val rowLoc = IntArray(2); row.getLocationOnScreen(rowLoc)
+        val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
+        val targetX = (rowLoc[0] - rootLoc[0]).toFloat()
+        val targetY = (rowLoc[1] - rootLoc[1]).toFloat()
+        springProxy(targetX - travelBaseX, targetY - travelBaseY, travelScaleAtRow()) { _ ->
+            proxy.isVisible = false
+            proxy.translationX = 0f
+            proxy.translationY = 0f
+            row.alpha = 1f
+        }
     }
 
     /** Swipe up on an intention opens its folder view. */
@@ -927,6 +994,184 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             return true
         }
         return false
+    }
+
+    // --- Word travel: the intention word follows the finger into the folder
+    // view and springs into the header slot; the folder view is interactive
+    // immediately and does not wait for the word to settle.
+
+    private val travelLongPress = Runnable {
+        val row = travelRow ?: return@Runnable
+        val tag = row.tag?.toString() ?: ""
+        if (tag.startsWith(FOLDER_TAG)) {
+            val id = tag.removePrefix(FOLDER_TAG).toLongOrNull() ?: return@Runnable
+            renameIntention(id)
+        }
+    }
+
+    private val travelSlopPx by lazy { ViewConfiguration.get(requireContext()).scaledTouchSlop }
+
+    private val folderTravelListener = View.OnTouchListener { v, event ->
+        val row = v as TextView
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                travelRow = row
+                travelMoved = false
+                travelInProgress = false
+                travelStartX = event.rawX
+                travelStartY = event.rawY
+                row.postDelayed(travelLongPress, ViewConfiguration.getLongPressTimeout().toLong())
+                true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.rawX - travelStartX
+                val dy = event.rawY - travelStartY
+                if (travelInProgress) {
+                    binding.folderWordProxy.translationX = dx
+                    binding.folderWordProxy.translationY = dy
+                } else if (-dy > travelSlopPx && abs(dy) > abs(dx)) {
+                    beginTravel(row)
+                } else if (abs(dx) > travelSlopPx || abs(dy) > travelSlopPx) {
+                    travelMoved = true
+                    row.removeCallbacks(travelLongPress)
+                }
+                true
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                row.removeCallbacks(travelLongPress)
+                when {
+                    travelInProgress && row === travelRow ->
+                        finishTravel(event.rawY - travelStartY)
+                    travelInProgress ->
+                        // another row grabbed mid-flight: still a working surface
+                        row.performClick()
+                    !travelMoved && event.actionMasked == MotionEvent.ACTION_UP ->
+                        row.performClick()
+                    else -> {
+                        val dx = event.rawX - travelStartX
+                        val dy = event.rawY - travelStartY
+                        if (abs(dx) > 100 && abs(dx) > abs(dy)) {
+                            if (dx > 0) openSwipeRightApp() else openSwipeLeftApp()
+                        }
+                    }
+                }
+                travelRow = null
+                true
+            }
+
+            else -> false
+        }
+    }
+
+    private fun beginTravel(row: TextView) {
+        val tag = row.tag?.toString() ?: return
+        if (!tag.startsWith(FOLDER_TAG)) return
+        val id = tag.removePrefix(FOLDER_TAG).toLongOrNull() ?: return
+        if (expandedFolderId != null) return
+        travelInProgress = true
+        row.removeCallbacks(travelLongPress)
+
+        val proxy = binding.folderWordProxy
+        proxy.text = row.text
+        proxy.setTextSize(TypedValue.COMPLEX_UNIT_PX, binding.expandedFolderName.textSize)
+        proxy.scaleX = travelScaleAtRow()
+        proxy.scaleY = travelScaleAtRow()
+        val rowLoc = IntArray(2); row.getLocationOnScreen(rowLoc)
+        val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
+        travelBaseX = (rowLoc[0] - rootLoc[0]).toFloat()
+        travelBaseY = (rowLoc[1] - rootLoc[1]).toFloat()
+        proxy.x = travelBaseX
+        proxy.y = travelBaseY
+        proxy.translationX = 0f
+        proxy.translationY = 0f
+
+        // the folder view renders fully and is interactive at once; the header
+        // name stays hidden until the word settles in its slot
+        enterIntentionView(id)
+        proxy.isVisible = true
+    }
+
+    /** The proxy is set in the header's type size but scaled down to the
+     *  row's size at lift-off, then springs up to full size in the header. */
+    private fun travelScaleAtRow(): Float {
+        val headerSize = binding.expandedFolderName.textSize
+        if (headerSize <= 0f || rowTextSizePx <= 0f) return 1f
+        return (rowTextSizePx / headerSize).coerceAtMost(1f)
+    }
+
+    private fun headerLocInRoot(): FloatArray {
+        val nameLoc = IntArray(2); binding.expandedFolderName.getLocationOnScreen(nameLoc)
+        val rootLoc = IntArray(2); binding.mainLayout.getLocationOnScreen(rootLoc)
+        return floatArrayOf(
+            (nameLoc[0] - rootLoc[0]).toFloat(),
+            (nameLoc[1] - rootLoc[1]).toFloat()
+        )
+    }
+
+    /** Released mid-flight: past ~40% of the way the word is caught by the
+     *  header slot's gravitational pull; otherwise it springs back to the row. */
+    private fun finishTravel(dy: Float) {
+        val proxy = binding.folderWordProxy
+        val target = headerLocInRoot()
+        val travelY = target[1] - travelBaseY
+        val commit = dy < travelY * 0.4f
+        val endX = if (commit) target[0] - travelBaseX else 0f
+        val endY = if (commit) travelY else 0f
+        val endScale = if (commit) 1f else proxy.scaleX
+        springProxy(endX, endY, endScale) { canceled ->
+            travelInProgress = false
+            proxy.isVisible = false
+            proxy.translationX = 0f
+            proxy.translationY = 0f
+            if (!commit && !canceled)
+                exitIntentionView()
+            else
+                populateExpandedHeader()
+        }
+    }
+
+    private fun springProxy(endX: Float, endY: Float, endScale: Float, onEnd: (canceled: Boolean) -> Unit) {
+        val proxy = binding.folderWordProxy
+        var ended = false
+        val settle = { canceled: Boolean ->
+            if (!ended) { ended = true; onEnd(canceled) }
+        }
+        SpringAnimation(proxy, DynamicAnimation.TRANSLATION_X, endX).apply {
+            spring = SpringForce(endX).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
+            minimumVisibleChange = 1f
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
+        SpringAnimation(proxy, DynamicAnimation.TRANSLATION_Y, endY).apply {
+            spring = SpringForce(endY).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
+            minimumVisibleChange = 1f
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
+        SpringAnimation(proxy, DynamicAnimation.SCALE_X, endScale).apply {
+            spring = SpringForce(endScale).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
+        SpringAnimation(proxy, DynamicAnimation.SCALE_Y, endScale).apply {
+            spring = SpringForce(endScale).apply {
+                stiffness = 400f
+                dampingRatio = 0.8f
+            }
+            addEndListener { _, canceled, _, _ -> settle(canceled) }
+            start()
+        }
     }
 
     private fun renameIntention(folderId: Long) {
@@ -972,7 +1217,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
             binding.expandedFolderName.text = expanded.verb
             binding.expandedFolderName.hint = ""
         }
-        binding.expandedFolderName.isVisible = true
+        binding.expandedFolderName.visibility =
+            if (travelInProgress) View.INVISIBLE else View.VISIBLE
     }
 
     /** Long-press on the intention name toggles edit mode: rows wiggle and can
@@ -1034,7 +1280,8 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
 
     private val touchSlopPx by lazy { ViewConfiguration.get(requireContext()).scaledTouchSlop }
 
-    /** Edit-mode row gestures: horizontal drag/flick stages a removal; taps do nothing. */
+    /** Edit-mode row gestures: horizontal drag/flick stages a removal with the
+     *  same spring physics as the folder name travel; taps do nothing. */
     private val editRowSwipeListener = View.OnTouchListener { v, event ->
         val row = v as TextView
         when (event.actionMasked) {
