@@ -220,3 +220,4 @@ jobs:
         with:
           generate_release_notes: true
           files: app/build/outputs/apk/release/*.apk
+# Intently milestone catalog: current master snapshot (CI Build #26)
