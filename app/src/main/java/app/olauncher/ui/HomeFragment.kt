@@ -929,7 +929,7 @@ class HomeFragment : BaseFragment(), View.OnClickListener, View.OnLongClickListe
         return false
     }
 
-    private fun renameIntention(folderId: Long) {    private fun renameIntention(folderId: Long) {
+    private fun renameIntention(folderId: Long) {
         val current = folderStore.folders.firstOrNull { it.id == folderId }
         showAppList(
             Constants.FLAG_RENAME_INTENTION,
